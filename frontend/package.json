@@ -1,0 +1,12 @@
+{
+  "name": "iot-platform-frontend",
+  "version": "1.0.0",
+  "description": "IoT Cloud Platform Frontend",
+  "main": "index.html",
+  "scripts": {
+    "start": "echo 'Static files served by backend Express server'"
+  },
+  "dependencies": {
+    "chart.js": "^4.4.1"
+  }
+}
