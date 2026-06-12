@@ -46,3 +46,6 @@ docker-compose.override.yml
 
 # TDengine
 taosdump/
+
+# agent
+AGENTS.*

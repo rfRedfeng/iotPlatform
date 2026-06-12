@@ -394,7 +394,7 @@ export const apiClient = new ApiClient(CONFIG.API_BASE_URL);
 | 框架 | Express.js | 轻量级Web框架 |
 | 数据库 | MySQL 8.0 | 关系数据存储 |
 | 缓存 | Redis 7+ | 会话、热点数据缓存 |
-| 时序数据库 | TDengine 3.0 | 时序数据存储与聚合 |
+| 时序数据库 | TDengine 3.2 | 时序数据存储与聚合，连接端口 6041（WebSocket） |
 | MQTT Broker | EMQX 或 Mosquitto | 设备接入 |
 | 协议库 | mqtt.js, dgram, coap | 协议实现 |
 
@@ -536,9 +536,10 @@ CREATE TABLE tenants (
 );
 
 -- 用户表
+-- 注意：系统管理员(role='admin')属于 tenant_id=0 的系统租户
 CREATE TABLE users (
     id INT PRIMARY KEY AUTO_INCREMENT,
-    tenant_id INT NOT NULL,
+    tenant_id INT NOT NULL DEFAULT 0,
     username VARCHAR(50) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     role ENUM('admin', 'manager', 'user') DEFAULT 'user',
@@ -549,12 +550,12 @@ CREATE TABLE users (
 
 -- 区域表（树形结构，支持多级楼层/区域）
 CREATE TABLE areas (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    tenant_id INT NOT NULL,
-    parent_id INT DEFAULT NULL,
-    name VARCHAR(100) NOT NULL,
+    id INT PRIMARY KEY AUTO_INCREMENT, -- id
+    tenant_id INT NOT NULL,            -- 区域编号
+    parent_id INT DEFAULT NULL,        -- 上层编号
+    name VARCHAR(100) NOT NULL,        -- 区域名称
     code VARCHAR(50) NOT NULL UNIQUE,  -- 区域唯一编码，如 F0-B1-L1-R101
-    description TEXT,
+    description TEXT,       
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (tenant_id) REFERENCES tenants(id),
     FOREIGN KEY (parent_id) REFERENCES areas(id)
@@ -606,6 +607,7 @@ CREATE TABLE alert_rules (
 -- 告警事件表
 CREATE TABLE alert_events (
     id INT PRIMARY KEY AUTO_INCREMENT,
+    tenant_id INT NOT NULL,
     rule_id INT NOT NULL,
     device_id INT NOT NULL,
     trigger_value DECIMAL(20, 6) NOT NULL,
@@ -613,6 +615,7 @@ CREATE TABLE alert_events (
     acknowledged BOOLEAN DEFAULT FALSE,
     acknowledged_by INT NULL,
     acknowledged_at TIMESTAMP NULL,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id),
     FOREIGN KEY (rule_id) REFERENCES alert_rules(id),
     FOREIGN KEY (device_id) REFERENCES devices(id)
 );
@@ -630,28 +633,70 @@ CREATE TABLE refresh_tokens (
 
 ### 7.2 TDengine 超表设计
 
+**SDK**: `@tdengine/websocket`（WebSocket 方式连接，端口 6041）
+
+**连接字符串**:
+```
+ws://root:taosdata@localhost:6041
+```
+
+**建库语句**:
 ```sql
--- 设备数据超级表
-CREATE TABLE device_data (
-    ts TIMESTAMP,
-    device_id INT,
-    metric VARCHAR(50),
-    value DOUBLE
+CREATE DATABASE iot_db KEEP 30 BUFFER 256;
+```
+
+**超表结构**（已创建）:
+
+```sql
+-- 设备数据超级表（温度/湿度/电压）
+CREATE STABLE device_data (
+    ts TIMESTAMP,           -- 时间戳（自动建索引）
+    temperature FLOAT,      -- 温度
+    humidity FLOAT,         -- 湿度
+    voltage FLOAT           -- 电压
 ) TAGS (
-    tenant_id INT,
-    area_id INT,
-    device_name VARCHAR(100)
+    device_id INT,         -- 设备ID（子表标签）
+    area_id INT            -- 区域ID（子表标签）
 );
 
--- 设备状态变化记录
-CREATE TABLE device_status (
-    ts TIMESTAMP,
-    device_id INT,
-    status VARCHAR(20),
-    reason VARCHAR(100)
+-- 设备状态超级表（在线/离线）
+CREATE STABLE device_status (
+    ts TIMESTAMP,          -- 时间戳
+    status VARCHAR(20)     -- online / offline / inactive
 ) TAGS (
-    tenant_id INT
+    device_id INT,         -- 设备ID（子表标签）
+    area_id INT            -- 区域ID（子表标签）
 );
+```
+
+**子表创建示例**（设备接入时自动创建）:
+```sql
+-- 根据 device_id 创建设备子表
+CREATE TABLE IF NOT EXISTS d1001 USING device_data TAGS (1001, 5);
+
+-- 插入数据
+INSERT INTO d1001 VALUES (NOW, 25.6, 60.2, 220.5);
+```
+
+**Node.js 接入示例**:
+```javascript
+const { sqlConnect, setLogLevel, destroy } = require('@tdengine/websocket');
+const { WSConfig } = require('@tdengine/websocket/src/common/config');
+
+const conf = new WSConfig('ws://root:taosdata@localhost:6041');
+const wsSql = await sqlConnect(conf);
+
+// 插入
+await wsSql.exec('INSERT INTO d1001 USING device_data TAGS (1, 5) VALUES (NOW, 25.6, 60.2, 220.5)');
+
+// 查询（游标遍历）
+const rows = await wsSql.query('SELECT * FROM device_data WHERE ts > NOW - 1h');
+while (await rows.next()) {
+    console.log(rows.getData());
+}
+await rows.close();
+await wsSql.close();
+destroy();
 ```
 
 ---
