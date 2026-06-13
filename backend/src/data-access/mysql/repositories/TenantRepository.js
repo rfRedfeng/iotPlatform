@@ -1,4 +1,4 @@
-import Tenant from '../../models/Tenant.js';
+import Tenant from '../models/Tenant.js';
 import dataSource from '../DataSourceManger.js';
 
 class TenantRepository {

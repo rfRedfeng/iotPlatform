@@ -123,6 +123,21 @@ class RealtimePusher {
     const clients = this.clients.get(tenantId);
     return clients ? clients.size : 0;
   }
+
+  /**
+   * 推送异步任务处理结果
+   * @param {number} tenantId - 租户ID
+   * @param {string} taskId - 任务ID
+   * @param {object} result - 任务处理结果 { status, data, error }
+   */
+  async pushTaskResult(tenantId, taskId, result) {
+    await this.pushToTenant(tenantId, {
+      type: 'task_result',
+      taskId,
+      ...result,
+      timestamp: new Date().toISOString()
+    });
+  }
 }
 
 export default new RealtimePusher();

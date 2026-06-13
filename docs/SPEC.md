@@ -100,7 +100,7 @@ data-access/
 | devices | 设备表 | id, tenant_id, area_id, name, device_key, device_secret, protocol, device_type, status, last_seen |
 | device_configs | 设备配置表 | id, device_id, config_key, config_value |
 | alert_rules | 告警规则表 | id, tenant_id, device_id, metric, threshold, condition, enabled |
-| alert_events | 告警事件表 | id, rule_id, device_id, value, triggered_at, acknowledged |
+| alert_events | 告警事件表 | id, rule_id, device_id, trigger_value, triggered_at, acknowledged |
 | data_points | 数据点表（MySQL备份） | id, device_id, metric, value, timestamp |
 
 ### 3.2 数据处理层 (Data Processing Layer)
@@ -161,8 +161,8 @@ services/
 
 ```
 routes/
-├── index.js             # 路由汇总
-├── auth.js              # 认证路由：/api/auth/login, /api/auth/refresh
+├── index.js             # 路由汇总（挂载所有子路由）
+├── auth.js              # 认证路由：/api/auth/login, /api/auth/register, /api/auth/refresh
 ├── users.js             # 用户路由：/api/users
 ├── devices.js           # 设备路由：/api/devices, /api/devices/:id/data
 ├── areas.js             # 区域路由：/api/areas
@@ -175,6 +175,7 @@ routes/
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | /api/auth/login | 用户登录，返回JWT |
+| POST | /api/auth/register | 租户内注册用户 |
 | POST | /api/auth/refresh | 刷新令牌 |
 | GET | /api/users | 获取用户列表 |
 | POST | /api/users | 创建用户 |
@@ -378,9 +379,26 @@ export const apiClient = new ApiClient(CONFIG.API_BASE_URL);
 
 ### 5.5 实时数据推送
 
-- 使用 **Server-Sent Events (SSE)** 或 **WebSocket** 推送实时数据到前端
+- 使用 **WebSocket** 推送实时数据到前端
 - 设备状态变更、告警触发、数据更新实时可见
 - 前端自动重连机制
+
+**WebSocket 消息类型枚举**：
+| type | 说明 | 触发时机 |
+|------|------|----------|
+| `device_data` | 设备最新指标数据 | DataPipeline 处理设备上报 |
+| `device_status` | 设备状态变更 | 设备上线/下线 |
+| `alert` | 告警触发通知 | RuleEvaluator 触发告警 |
+| `task_result` | 异步任务处理结果 | Service Worker 处理完成 |
+
+**WebSocket 消息格式**：
+```javascript
+{
+  type: "device_data" | "device_status" | "alert" | "task_result",
+  // type-specific fields...
+  timestamp: "ISO8601"
+}
+```
 
 ---
 
@@ -402,7 +420,7 @@ export const apiClient = new ApiClient(CONFIG.API_BASE_URL);
 
 | 组件 | 技术选型 | 说明 |
 |------|----------|------|
-| 核心 | 原生 JavaScript (ES6+) | 无框架依赖 |
+| 核心 | 原生 JavaScript (ES6+) | 无框架依赖，使用 `<script type="module">` 支持 ES Module |
 | 图表 | Chart.js | 仪表盘图表 |
 | 布局 | CSS Grid + Flexbox | 响应式布局 |
 | 状态管理 | 简单发布订阅模式 | 避免过度设计 |
@@ -453,8 +471,8 @@ node_iot/
 │   │   │   └── errorHandler.js       # 错误处理
 │   │   ├── models/                   # 数据模型
 │   │   ├── config/                   # 配置文件
-│   │   │   ├── database.js          # MySQL/Redis/TDengine配置
-│   │   │   └── jwt.js               # JWT密钥配置
+│   │   │   ├── database.js          ✅ MySQL/Redis/TDengine配置
+│   │   │   └── jwt.js               ✅ JWT密钥配置（签发/验证）
 │   │   └── app.js                   # 应用入口
 │   ├── package.json
 │   └── .env                          # 环境变量 (PORT=3000, DB_HOST, REDIS_HOST, etc)
@@ -743,7 +761,92 @@ destroy();
 
 ## 8. API 详细规范
 
-### 8.1 认证 API
+### 8.2 设备 API
+
+> **注意**：所有写操作（POST/PUT/DELETE）通过异步任务队列处理，立即返回 `202 Accepted`，处理结果通过 WebSocket 推送。
+
+**POST /api/devices**
+```json
+// Request
+{
+    "name": "温度传感器-001",
+    "areaId": 1,
+    "protocol": "mqtt"
+}
+
+// Response 202（异步队列模式）
+{
+    "success": true,
+    "taskId": "uuid-xxx-xxx"
+}
+
+// Response（任务完成后 WebSocket 推送）
+{
+    "type": "task_result",
+    "taskId": "uuid-xxx-xxx",
+    "status": "success",
+    "data": {
+        "id": 1,
+        "name": "温度传感器-001",
+        "deviceKey": "dev_a1b2c3d4e5f6",
+        "deviceSecret": "secret_xxxxxxxxxxxx",
+        "protocol": "mqtt",
+        "status": "inactive",
+        "createdAt": "2026-06-09T10:00:00Z"
+    }
+}
+```
+
+**GET /api/devices/:id/data**
+```json
+// Response 200
+{
+    "success": true,
+    "data": {
+        "deviceId": 1,
+        "metrics": { "temperature": 25.6, "humidity": 60.2 },
+        "timestamp": "2026-06-09T10:00:00Z"
+    }
+}
+```
+
+### 8.3 仪表盘 API
+
+**GET /api/dashboard/summary**
+```json
+// Response 200
+{
+    "success": true,
+    "data": {
+        "totalDevices": 150,
+        "onlineDevices": 120,
+        "offlineDevices": 30,
+        "todayAlerts": 5,
+        "unacknowledgedAlerts": 2,
+        "tenantName": "Demo Tenant",
+        "lastUpdated": "2026-06-09T10:30:00Z"
+    }
+}
+```
+
+**GET /api/dashboard/trends**
+```json
+// Response 200
+{
+    "success": true,
+    "data": {
+        "deviceId": 1,
+        "metric": "temperature",
+        "interval": "1h",
+        "dataPoints": [
+            { "timestamp": "2026-06-09T09:00:00Z", "value": 24.5 },
+            { "timestamp": "2026-06-09T10:00:00Z", "value": 25.6 }
+        ]
+    }
+}
+```
+
+### 8.4 认证 API
 
 **POST /api/auth/login**
 ```json
@@ -770,48 +873,20 @@ destroy();
 }
 ```
 
-### 8.2 设备 API
-
-**POST /api/devices**
+**POST /api/auth/register**
 ```json
-// Request
+// Request（仅 manager/admin 可调用）
 {
-    "name": "温度传感器-001",
-    "areaId": 1,
-    "protocol": "mqtt"
+    "username": "newuser",
+    "password": "password123",
+    "role": "user",
+    "email": "user@example.com"
 }
 
-// Response 201
+// Response 202
 {
     "success": true,
-    "data": {
-        "id": 1,
-        "name": "温度传感器-001",
-        "deviceKey": "dev_a1b2c3d4e5f6",
-        "deviceSecret": "secret_xxxxxxxxxxxx",
-        "protocol": "mqtt",
-        "status": "inactive",
-        "createdAt": "2026-06-09T10:00:00Z"
-    }
-}
-```
-
-### 8.3 仪表盘 API
-
-**GET /api/dashboard/summary**
-```json
-// Response 200
-{
-    "success": true,
-    "data": {
-        "totalDevices": 150,
-        "onlineDevices": 120,
-        "offlineDevices": 30,
-        "todayAlerts": 5,
-        "unacknowledgedAlerts": 2,
-        "tenantName": "Demo Tenant",
-        "lastUpdated": "2026-06-09T10:30:00Z"
-    }
+    "taskId": "uuid-xxx-xxx"
 }
 ```
 
@@ -865,17 +940,22 @@ destroy();
 
 ```javascript
 // backend/src/app.js
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const path = require('path');
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import { WebSocketServer } from 'ws';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import RealtimePusher from './data-processing/RealtimePusher.js';
+import { startWorker } from './services/worker.js';
 
+dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // 中间件
 app.use(helmet());
-app.use(cors());
+app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json());
 
 // 静态文件托管 (前端)
@@ -884,7 +964,7 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '../../frontend/index.html'));
 });
 
-// API 路由
+// API 路由（异步队列模式）
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/devices', require('./routes/devices'));
 app.use('/api/users', require('./routes/users'));
@@ -892,11 +972,23 @@ app.use('/api/areas', require('./routes/areas'));
 app.use('/api/alerts', require('./routes/alerts'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 
+// WebSocket 服务器
+const wsServer = new WebSocketServer({ noServer: true });
+RealtimePusher.init(wsServer);
+
+server.on('upgrade', (request, socket, head) => {
+    wsServer.handleUpgrade(request, socket, head, (ws) => {
+        wsServer.emit('connection', ws, request);
+    });
+});
+
 // 健康检查
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
-app.listen(PORT, () => {
+// 启动服务器
+const server = app.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}`);
+    startWorker(); // 后台启动 Worker，不阻塞 Express
 });
 ```
 
@@ -940,7 +1032,7 @@ chore: 构建/工具
 | 3 | **设备双向认证** | device_key + device_secret |
 | 4 | **实时推送** | WebSocket/SSE 实时数据 |
 | 5 | **时序数据库** | TDengine 存储时序数据 |
-| 6 | **告警引擎** | 规则配置、阈值触发 |
+| 6 | **告警引擎** | 规则配置、阈值触发，支持持续时间检测 |
 | 7 | **协议适配器** | MQTT/TCP/UDP/CoAP 统一处理 |
 | 8 | **数据验证** | 输入校验、格式转换 |
 | 9 | **限流与安全** | API 限流、CORS、XSS防护 |
@@ -952,16 +1044,197 @@ chore: 构建/工具
 
 ## 13. 实施里程碑
 
-| 阶段 | 内容 | 产出 |
-|------|------|------|
-| Phase 1 | 项目初始化、数据库设计、基础架构 | 目录结构、数据库表、配置 |
-| Phase 2 | 数据访问层、Redis缓存、TDengine接入 | DAO层、缓存层 |
-| Phase 3 | 业务服务层、API路由、认证中间件 | 服务层、REST API |
-| Phase 4 | 协议适配器、告警引擎、数据处理管道 | 设备接入、数据处理 |
-| Phase 5 | 前端开发、仪表盘、实时推送 | 完整UI、数据可视化 |
-| Phase 6 | 测试、安全审计、部署文档 | 测试报告、部署手册 |
+| 阶段 | 内容 | 产出 | 状态 |
+|------|------|------|------|
+| Phase 1 | 项目初始化、数据库设计、基础架构 | 目录结构、数据库表、配置 | ✅ 完成 |
+| Phase 2 | 数据访问层、Redis缓存、TDengine接入 | DAO层、缓存层 | ✅ 完成 |
+| Phase 3 | 业务服务层、API路由、认证中间件、异步队列Worker | 服务层、REST API、异步任务队列 | ✅ 完成 |
+| Phase 4 | 协议适配器、告警引擎、数据处理管道 | 设备接入、数据处理 | ✅ 完成 |
+| Phase 5 | 前端开发、仪表盘、实时推送 | 完整UI、数据可视化 | ❌ 未完成 |
+| Phase 6 | 测试、安全审计、部署文档 | 测试报告、部署手册 | ❌ 未完成 |
 
 ---
 
-*本文档版本: v1.0*
-*最后更新: 2026-06-09*
+## 13.5 当前架构实现状态（v1.1）
+
+### 已实现模块
+
+```
+backend/src/
+├── data-access/
+│   ├── mysql/
+│   │   ├── models/
+│   │   │   ├── User.js          ✅
+│   │   │   ├── Device.js        ✅
+│   │   │   ├── Area.js          ✅
+│   │   │   ├── Tenant.js        ✅
+│   │   │   ├── AlertRule.js     ✅
+│   │   │   └── AlertEvent.js    ✅
+│   │   └── repositories/
+│   │       ├── UserRepository.js       ✅
+│   │       ├── DeviceRepository.js      ✅
+│   │       ├── AreaRepository.js       ✅
+│   │       ├── AlertRuleRepository.js  ✅
+│   │       └── AlertEventRepository.js ✅
+│   ├── redis/
+│   │   ├── CacheManager.js      ✅ (单连接复用)
+│   │   └── SessionStore.js      ❌ (会话存储，待实现)
+│   └── tdengine/
+│       └── TimeSeriesRepo.js    ✅
+│
+├── data-processing/
+│   ├── protocol-adapters/       ✅ MQTT/TCP/UDP/CoAP
+│   ├── parsers/
+│   │   └── JsonParser.js        ✅
+│   │   └── BinaryParser.js      ❌
+│   │   └── XmlParser.js         ❌
+│   ├── cache/
+│   │   ├── DeviceCache.js       ✅
+│   │   ├── MetricCache.js       ✅
+│   │   └── AlertCache.js        ✅ (含 getRules/setRules)
+│   ├── alert-engine/
+│   │   ├── RuleEvaluator.js     ✅ (含 durationSeconds 持续检测)
+│   │   ├── Notifier.js         ✅
+│   │   └── AlertLogger.js       ✅
+│   ├── time-series/
+│   │   └── DataIngestor.js      ✅
+│   │   └── DownSampler.js       ❌
+│   │   └── Aggregator.js        ❌
+│   ├── DataPipeline.js          ✅ (含实时推送)
+│   └── RealtimePusher.js       ✅ (WebSocket 推送)
+│
+├── middleware/                   ⚠️ 部分完成
+│   ├── auth.js                  ❌
+│   ├── tenant.js                ❌
+│   ├── rateLimit.js             ❌
+│   └── errorHandler.js          ✅
+│
+├── services/                    ❌ 待实现
+│   ├── UserService.js           ❌
+│   ├── DeviceService.js         ❌
+│   ├── AreaService.js           ❌
+│   ├── AlertService.js          ❌
+│   ├── DashboardService.js      ❌
+│   ├── AuthService.js           ❌
+│   ├── TenantService.js         ❌
+│   └── worker.js                 ❌ (Consumer 主循环，从 task:queue 消费任务)
+│
+└── routes/                      ❌ 待实现
+    ├── index.js                 ❌ (路由汇总)
+    ├── auth.js                  ❌
+    ├── users.js                 ❌
+    ├── devices.js               ❌
+    ├── areas.js                 ❌
+    ├── alerts.js                ❌
+    └── dashboard.js             ❌
+```
+
+### 核心实现细节
+
+| 模块 | 实现要点 |
+|------|----------|
+| **CacheManager** | 单例连接复用，避免每次操作重复 connect()；支持 List 队列操作（enqueue/dequeue） |
+| **RuleEvaluator** | 支持 `durationSeconds` 持续时间检测（Redis 缓存触发时间戳）；移除重复 DB 查询 |
+| **DataPipeline** | 数据处理流程：解析 → 缓存 → 持久化 → 告警评估 → 实时推送 |
+| **RealtimePusher** | 按租户分组管理 WebSocket 客户端；推送 device_data / device_status / alert / task_result 事件 |
+| **Notifier** | 通过 RealtimePusher 将告警事件推送至前端界面 |
+| **AlertLogger** | 结构化日志：ALERT_TRIGGERED / ALERT_ACKNOWLEDGED / RULE_* |
+
+---
+
+### 异步任务队列架构（v1.2 新增）
+
+**设计模式**：Route（Producer）→ Redis Queue → Service Worker（Consumer）
+
+```
+用户 HTTP 请求
+    ↓
+Routes（验证参数）→ enqueue('task:queue', task) → 立即返回 202 Accepted { taskId }
+    ↓
+Service Worker（后台消费）
+    ↓
+Repository / CacheManager（读写 MySQL/Redis）
+    ↓
+RealtimePusher.pushTaskResult → WebSocket 推送结果给前端
+```
+
+**Redis 数据结构**：
+| Key | 类型 | 说明 | TTL |
+|-----|------|------|-----|
+| `task:queue` | List | FIFO 任务队列 | 持久 |
+| `task:result:{taskId}` | String | 任务处理结果 JSON | 5min |
+| `service:device:{id}` | String | 设备业务数据缓存 | 5min |
+| `service:user:{id}` | String | 用户业务数据缓存 | 5min |
+| `service:area:{id}` | String | 区域业务数据缓存 | 5min |
+
+**任务结构**：
+```javascript
+{
+  id: "uuid",
+  type: "device.create",   // 操作类型
+  payload: { ... },        // 业务数据
+  tenantId: 1,
+  userId: 5,
+  timestamp: "ISO8601"
+}
+```
+
+**结果结构**：
+```javascript
+{
+  status: "success" | "failed",
+  data: { ... },
+  error: null | { message: "..." },
+  processedAt: "ISO8601"
+}
+```
+
+**Worker 主循环**：
+```javascript
+// services/worker.js
+async function startWorker() {
+  while (true) {
+    const taskStr = await CacheManager.dequeue('task:queue');
+    if (!taskStr) { await sleep(100); continue; }
+    const task = JSON.parse(taskStr);
+    const handler = taskHandlers[task.type];
+    if (!handler) { console.warn('Unknown task type:', task.type); continue; }
+    const result = await handler(task);
+    await CacheManager.set(`task:result:${task.id}`, JSON.stringify(result), 300);
+    RealtimePusher.pushTaskResult(task.tenantId, task.id, result);
+  }
+}
+```
+
+**与 DataPipeline 的关系**：
+- **DataPipeline** 消费设备上报数据（同步实时处理）→ 写入 TDengine / MetricCache
+- **Service Worker** 消费用户操作任务（异步后台处理）→ 写入 MySQL / 业务缓存
+- 两者共享 Redis，不共享队列，独立运行
+
+---
+
+### 待集成的 WebSocket 初始化（app.js）
+
+```javascript
+// app.js 需添加 WebSocket 服务器初始化 + Worker 启动
+import RealtimePusher from './data-processing/RealtimePusher.js';
+import { startWorker } from './services/worker.js';
+import { WebSocketServer } from 'ws';
+
+const wsServer = new WebSocketServer({ noServer: true });
+RealtimePusher.init(wsServer);
+
+server.on('upgrade', (request, socket, head) => {
+  wsServer.handleUpgrade(request, socket, head, (ws) => {
+    wsServer.emit('connection', ws, request);
+  });
+});
+
+// 后台启动 Worker，不阻塞 Express
+startWorker();
+```
+
+---
+
+*本文档版本: v1.2*
+*最后更新: 2026-06-14*

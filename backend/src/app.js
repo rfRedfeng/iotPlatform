@@ -2,8 +2,13 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
+import http from 'http';
+import { WebSocketServer } from 'ws';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+import RealtimePusher from './data-processing/RealtimePusher.js';
+import routes from './routes/index.js';
 
 // 加载环境变量
 dotenv.config();
@@ -15,9 +20,7 @@ const __dirname = path.dirname(__filename);
 
 // 中间件
 app.use(helmet());
-app.use(cors({
-    origin: process.env.CORS_ORIGIN || '*'
-}));
+app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json());
 
 // 静态文件托管 (前端)
@@ -26,13 +29,8 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '../../frontend/index.html'));
 });
 
-// API 路由 (暂时注释，等实现后再启用)
-// app.use('/api/auth', require('./routes/auth'));
-// app.use('/api/devices', require('./routes/devices'));
-// app.use('/api/users', require('./routes/users'));
-// app.use('/api/areas', require('./routes/areas'));
-// app.use('/api/alerts', require('./routes/alerts'));
-// app.use('/api/dashboard', require('./routes/dashboard'));
+// API 路由（统一通过 routes/index.js 挂载，含中间件链）
+app.use('/api', routes);
 
 // 健康检查
 app.get('/health', (req, res) => {
@@ -43,10 +41,37 @@ app.get('/health', (req, res) => {
     });
 });
 
-app.listen(PORT, () => {
+// ========== WebSocket 服务器 ==========
+const server = http.createServer(app);
+
+const wsServer = new WebSocketServer({ noServer: true });
+RealtimePusher.init(wsServer);
+
+// 处理 WebSocket upgrade 请求
+server.on('upgrade', (request, socket, head) => {
+    wsServer.handleUpgrade(request, socket, head, (ws) => {
+        wsServer.emit('connection', ws, request);
+    });
+});
+
+// ========== 启动 ==========
+server.listen(PORT, () => {
     console.log(`🚀 IOT项目运行: http://localhost:${PORT}`);
     console.log(`📁 静态文件服务: http://localhost:${PORT}`);
-    console.log(`🔧 API服务:  http://localhost:${PORT}/api`);
+    console.log(`🔧 API服务: http://localhost:${PORT}/api`);
+
+    import('./services/DeviceService.js');
+    import('./services/UserService.js');
+    import('./services/AreaService.js');
+    import('./services/AlertService.js');
+    import('./services/AuthService.js');
+    import('./services/TenantService.js').then(() => {
+        return import('./services/worker.js');
+    }).then(({ startWorker }) => {
+        startWorker();
+    }).catch(err => {
+        console.error('[Worker] 启动失败:', err.message);
+    });
 });
 
 export default app;

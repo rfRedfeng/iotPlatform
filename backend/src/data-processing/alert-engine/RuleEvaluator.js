@@ -1,4 +1,4 @@
-import CacheManager from '../../../data-access/redis/CacheManager.js';
+import CacheManager from '../../data-access/redis/CacheManager.js';
 import AlertEventRep from '../../data-access/mysql/repositories/AlertEventRepository.js';
 import Notifier from './Notifier.js';
 import AlertLogger from './AlertLogger.js';

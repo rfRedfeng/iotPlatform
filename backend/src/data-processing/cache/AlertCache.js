@@ -1,4 +1,4 @@
-import CacheManager from '../../../data-access/redis/CacheManager.js';
+import CacheManager from '../../data-access/redis/CacheManager.js';
 
 class AlertCache {
   // 缓存告警事件

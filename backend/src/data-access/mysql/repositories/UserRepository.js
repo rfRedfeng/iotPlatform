@@ -1,4 +1,4 @@
-import User from '../../models/User.js';
+import User from '../models/User.js';
 import dataSource from '../DataSourceManger.js';
 
 class UserRepository {
@@ -14,8 +14,16 @@ class UserRepository {
   // 查询特定用户
   async findById(id) {
     const pool = dataSource.getMysqlPool();
-    const [rows] = await pool.execute(`SELECT * FROM ${User.tableName} 
+    const [rows] = await pool.execute(`SELECT * FROM ${User.tableName}
       WHERE ${User.fields.id} = ?`, [id]);
+    return rows[0] || null;
+  }
+
+  // 根据用户名查询
+  async findByUsername(username) {
+    const pool = dataSource.getMysqlPool();
+    const [rows] = await pool.execute(`SELECT * FROM ${User.tableName}
+      WHERE ${User.fields.username} = ?`, [username]);
     return rows[0] || null;
   }
 

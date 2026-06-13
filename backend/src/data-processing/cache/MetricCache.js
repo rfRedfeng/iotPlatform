@@ -1,4 +1,4 @@
-import CacheManager from '../../../data-access/redis/CacheManager.js';
+import CacheManager from '../../data-access/redis/CacheManager.js';
 
 class MetricCache {
   // 设置设备最新指标数据（metrics = { temperature: 25.6, humidity: 60 }）

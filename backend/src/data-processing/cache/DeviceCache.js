@@ -1,4 +1,4 @@
-import CacheManager from '../../../data-access/redis/CacheManager.js';
+import CacheManager from '../../data-access/redis/CacheManager.js';
 
 class DeviceCache {
   // 设置设备状态
