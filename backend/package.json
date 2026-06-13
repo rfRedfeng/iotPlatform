@@ -12,6 +12,7 @@
     "@tdengine/websocket": "^3.5.0",
     "axios": "^1.6.2",
     "bcrypt": "^5.1.1",
+    "coap": "^1.5.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",

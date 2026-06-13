@@ -1,4 +1,4 @@
-import TdDengineManger from "./TdDengineManger";
+import TdDengineManger from "./TdDengineManger.js";
 
 import { tdengine } from "../../config/database.js";
 

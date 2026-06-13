@@ -119,9 +119,9 @@ data-processing/
 │   ├── BinaryParser.js   # 二进制协议解析
 │   └── XmlParser.js      # XML 数据解析
 ├── cache/                # 缓存管理
-│   ├── DeviceCache.js    # 设备状态缓存
-│   ├── MetricCache.js    # 指标数据缓存
-│   └── AlertCache.js     # 告警缓存
+│   ├── DeviceCache.js    # 设备状态缓存（在线/离线/最后活跃时间）
+│   ├── MetricCache.js    # 指标数据缓存（使用JSON）
+│   └── AlertCache.js     # 告警缓存（规则/事件/计数）
 ├── alert-engine/         # 告警引擎
 │   ├── RuleEvaluator.js  # 规则评估器
 │   ├── Notifier.js       # 通知器（仅界面展示）
@@ -596,7 +596,7 @@ CREATE TABLE alert_rules (
     device_id INT,
     name VARCHAR(100) NOT NULL,
     metric VARCHAR(50) NOT NULL,
-    condition ENUM('gt', 'lt', 'eq', 'gte', 'lte') NOT NULL,
+    condition ENUM('gt', 'lt', 'eq', 'gte', 'lte', 'ne') NOT NULL,
     threshold DECIMAL(20, 6) NOT NULL,
     duration_seconds INT DEFAULT 0,
     enabled BOOLEAN DEFAULT TRUE,

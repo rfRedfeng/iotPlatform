@@ -1,4 +1,4 @@
-import AlertRule from '../../models/AlertRule';
+import AlertRule from '../models/AlertRule.js';
 import dataSource from '../DataSourceManger.js'
 
 
@@ -27,6 +27,14 @@ class AlertRuleRepository {
     const offset = (page - 1) * pageSize;
     const query = `SELECT * FROM ${AlertRule.tableName} WHERE ${AlertRule.fields.tenantId} = ? AND ${AlertRule.fields.deviceId} = ? LIMIT ? OFFSET ?`;
     const [rows] = await pool.execute(query, [tenantId, deviceId, pageSize, offset]);
+    return rows;
+  }
+
+  // 根据租户ID和设备ID查询所有告警规则，用于告警引擎评估时使用，不分页
+  async findByTenantIdAndDeviceId(tenantId, deviceId) {
+    const pool = dataSource.getMysqlPool();
+    const query = `SELECT * FROM ${AlertRule.tableName} WHERE ${AlertRule.fields.tenantId} = ? AND ${AlertRule.fields.deviceId} = ?`;
+    const [rows] = await pool.execute(query, [tenantId, deviceId]);
     return rows;
   }
 

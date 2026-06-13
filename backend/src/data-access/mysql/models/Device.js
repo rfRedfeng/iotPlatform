@@ -10,10 +10,10 @@ const Device = {
     deviceSecret: 'device_secret',
     protocol: 'protocol',
     deviceType: 'device_type',
-    status: 'status',
+    status: 'status', // 在线、离线、故障等
     lastSeen: 'last_seen',
-    metadata: 'metadata',
-    createdAt: 'created_at'
+    metadata: 'metadata', // 设备的其他元数据，JSON格式
+    createdAt: 'created_at' // 创建时间
   },
 
   // 允许加入数据库的字段
