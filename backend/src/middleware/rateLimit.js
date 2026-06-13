@@ -1,7 +1,7 @@
 /**
  * 限流中间件
  * 基于 Redis 实现：100 请求/分钟/用户
- * 使用滑动窗口计数算法
+ * 使用滑动窗口计数算法，Lua 脚本保证原子性
  */
 
 import CacheManager from '../data-access/redis/CacheManager.js';
@@ -10,17 +10,45 @@ const WINDOW_SECONDS = 60;
 const MAX_REQUESTS = 100;
 const KEY_PREFIX = 'ratelimit:';
 
-function getKey(userId, ip) {
-  return `${KEY_PREFIX}${userId || ip}`;
-}
+// Lua 脚本：原子化执行滑动窗口限流检查 + 计数
+// KEYS[1] = rate limit key
+// ARGV[1] = now timestamp (ms)
+// ARGV[2] = windowStart timestamp (ms)
+// ARGV[3] = TTL seconds
+// ARGV[4] = max requests
+const RATE_LIMIT_SCRIPT = `
+local key = KEYS[1]
+local now = tonumber(ARGV[1])
+local windowStart = tonumber(ARGV[2])
+local ttl = tonumber(ARGV[3])
+local maxReq = tonumber(ARGV[4])
+
+redis.call('ZREMRANGEBYSCORE', key, 0, windowStart)
+
+local count = redis.call('ZCARD', key)
+if count >= maxReq then
+  local oldest = redis.call('ZRANGE', key, 0, 0, 'BY', 'SCORE')
+  local resetAt = 0
+  if oldest and #oldest > 0 then
+    resetAt = math.ceil((tonumber(oldest[1]) + ttl * 1000) / 1000)
+  else
+    resetAt = math.ceil((now + ttl * 1000) / 1000)
+  end
+  return {0, 0, resetAt}
+end
+
+redis.call('ZADD', key, now, tostring(now))
+redis.call('EXPIRE', key, ttl)
+
+return {1, maxReq - count - 1, math.ceil((now + ttl * 1000) / 1000)}
+`;
 
 export function rateLimitMiddleware(req, res, next) {
-  // 优先用 userId（已登录），降级用 IP
-  const identifier = req.user?.userId || req.ip;
-  const key = getKey(req.user?.userId, req.ip);
+  const userId = req.user?.userId;
+  const identifier = userId ?? req.ip;
+  const key = `${KEY_PREFIX}${String(identifier)}`;
 
   _checkAndIncrement(key).then(({ allowed, remaining, resetAt }) => {
-    // 设置响应头
     res.set({
       'X-RateLimit-Limit': MAX_REQUESTS,
       'X-RateLimit-Remaining': remaining,
@@ -39,7 +67,6 @@ export function rateLimitMiddleware(req, res, next) {
 
     next();
   }).catch(err => {
-    // Redis 出错时放行，不阻塞业务
     console.error('[RateLimit] Error:', err.message);
     next();
   });
@@ -49,31 +76,15 @@ async function _checkAndIncrement(key) {
   const now = Date.now();
   const windowStart = now - WINDOW_SECONDS * 1000;
 
-  // 使用 Redis 事务保证原子性
   const client = await CacheManager.getClient();
-
-  // 移除窗口外的旧记录
-  await client.zRemRangeByScore(key, 0, windowStart);
-
-  // 获取当前窗口内请求数
-  const count = await client.zCard(key);
-
-  if (count >= MAX_REQUESTS) {
-    // 超限，拒绝
-    const oldestTs = await client.zRange(key, 0, 0, { BY: 'SCORE' });
-    const resetAt = oldestTs.length > 0
-      ? Math.ceil((parseInt(oldestTs[0]) + WINDOW_SECONDS * 1000) / 1000)
-      : Math.ceil((now + WINDOW_SECONDS * 1000) / 1000);
-    return { allowed: false, remaining: 0, resetAt };
-  }
-
-  // 记录本次请求
-  await client.zAdd(key, { score: now, value: String(now) });
-  await client.expire(key, WINDOW_SECONDS);
+  const result = await client.eval(RATE_LIMIT_SCRIPT, {
+    keys: [key],
+    arguments: [now, windowStart, WINDOW_SECONDS, MAX_REQUESTS]
+  });
 
   return {
-    allowed: true,
-    remaining: MAX_REQUESTS - count - 1,
-    resetAt: Math.ceil((now + WINDOW_SECONDS * 1000) / 1000)
+    allowed: result[0] === 1,
+    remaining: result[1],
+    resetAt: result[2]
   };
 }

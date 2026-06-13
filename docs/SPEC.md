@@ -529,11 +529,20 @@ node_iot/
 ### 6.4 服务启动命令
 
 ```bash
-# 后端服务 (同时托管前端静态文件)
 cd backend
+
+# 安装依赖
 npm install
-npm start  # 启动服务器 (端口 3000)
-# 访问 http://localhost:3000 即可看到前端页面
+
+# 数据库初始化（首次运行，执行一次）
+node scripts/init-db.js
+
+# 启动后端服务 (同时托管前端静态文件)
+npm start  # 端口 3000
+
+# （可选）为指定租户构建测试数据
+node scripts/seed-test.js [tenantId] [deviceCount]
+# 示例: node scripts/seed-test.js 1 20
 ```
 
 ---

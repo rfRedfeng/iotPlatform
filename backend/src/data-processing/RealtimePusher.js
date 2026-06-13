@@ -50,6 +50,7 @@ class RealtimePusher {
    */
   async pushToTenant(tenantId, payload) {
     if (!this.server) return;
+    if (tenantId === undefined || tenantId === null) return;
     const tenantClients = this.clients.get(tenantId);
     if (!tenantClients) return;
 
@@ -109,11 +110,14 @@ class RealtimePusher {
    * @param {object} alertEvent - 告警事件
    */
   async pushAlert(tenantId, alertEvent) {
-    await this.pushToTenant(tenantId, {
+    const payload = {
       type: 'alert',
-      ...alertEvent,
       timestamp: new Date().toISOString()
-    });
+    };
+    if (alertEvent && typeof alertEvent === 'object') {
+      Object.assign(payload, alertEvent);
+    }
+    await this.pushToTenant(tenantId, payload);
   }
 
   /**
@@ -131,12 +135,15 @@ class RealtimePusher {
    * @param {object} result - 任务处理结果 { status, data, error }
    */
   async pushTaskResult(tenantId, taskId, result) {
-    await this.pushToTenant(tenantId, {
+    const payload = {
       type: 'task_result',
       taskId,
-      ...result,
       timestamp: new Date().toISOString()
-    });
+    };
+    if (result && typeof result === 'object') {
+      Object.assign(payload, result);
+    }
+    await this.pushToTenant(tenantId, payload);
   }
 }
 

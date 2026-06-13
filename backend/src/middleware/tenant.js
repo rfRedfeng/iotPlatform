@@ -16,7 +16,7 @@ export function tenantMiddleware(req, res, next) {
   }
 
   const tenantId = req.user.tenantId;
-  if (!tenantId && tenantId !== 0) {
+  if (tenantId === undefined || tenantId === null) {
     return res.status(403).json({
       success: false,
       error: { code: 403, message: 'Tenant ID not found in token' }

@@ -80,7 +80,8 @@ export async function createArea(payload, task) {
   return { id: areaId, name, code, parentId };
 }
 
-export async function updateArea(areaId, payload, task) {
+export async function updateArea(payload, task) {
+  const { areaId, ...updates } = payload;
   const tenantId = task.tenantId;
 
   const existing = await AreaRepository.findById(areaId);
@@ -88,17 +89,18 @@ export async function updateArea(areaId, payload, task) {
     throw new Error('Area not found');
   }
 
-  const result = await AreaRepository.update(areaId, payload);
+  const result = await AreaRepository.update(areaId, updates);
   if (result) {
     await _invalidateCache(areaId);
-    if (existing.parentId) {
-      await _invalidateCache(existing.parentId);
+    if (existing.parent_id) {
+      await _invalidateCache(existing.parent_id);
     }
   }
   return result;
 }
 
-export async function deleteArea(areaId, task) {
+export async function deleteArea(payload, task) {
+  const { areaId } = payload;
   const tenantId = task.tenantId;
 
   const existing = await AreaRepository.findById(areaId);
@@ -109,8 +111,8 @@ export async function deleteArea(areaId, task) {
   const result = await AreaRepository.delete(areaId);
   if (result) {
     await _invalidateCache(areaId);
-    if (existing.parentId) {
-      await _invalidateCache(existing.parentId);
+    if (existing.parent_id) {
+      await _invalidateCache(existing.parent_id);
     }
   }
   return result;

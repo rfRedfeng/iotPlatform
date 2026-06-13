@@ -56,7 +56,7 @@ router.post('/register', async (req, res, next) => {
       id: taskId,
       type: 'auth.register',
       payload: { username, password, role, email },
-      tenantId: req.body.tenantId || req.user?.tenantId || 0,
+      tenantId: req.user?.tenantId ?? 0,
       userId: req.user?.userId,
       timestamp: new Date().toISOString()
     };

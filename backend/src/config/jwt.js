@@ -4,8 +4,13 @@ import jwt from 'jsonwebtoken';
 const ACCESS_TOKEN_EXPIRY = '15m';
 const REFRESH_TOKEN_EXPIRY = '7d';
 
+if (!process.env.JWT_SECRET) {
+  console.error('[JWT] FATAL: JWT_SECRET environment variable must be set');
+  process.exit(1);
+}
+
 const jwtConfig = {
-  secret: process.env.JWT_SECRET || 'your-secret-key-change-in-production',
+  secret: process.env.JWT_SECRET,
   accessTokenExpiry: ACCESS_TOKEN_EXPIRY,
   refreshTokenExpiry: REFRESH_TOKEN_EXPIRY,
   issuer: 'node-iot-platform',

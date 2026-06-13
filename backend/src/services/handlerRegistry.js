@@ -7,7 +7,7 @@ const handlers = {};
 
 export function registerHandler(type, handler) {
   if (handlers[type]) {
-    console.warn(`[HandlerRegistry] Handler "${type}" 已存在，将被覆盖`);
+    throw new Error(`[HandlerRegistry] Duplicate handler "${type}" — cannot register twice`);
   }
   handlers[type] = handler;
 }

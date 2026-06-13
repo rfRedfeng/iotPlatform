@@ -51,6 +51,11 @@ class AlertRuleRepository {
     const pool = dataSource.getMysqlPool();
     const fields = AlertRule.insertableFields.map(field => AlertRule.fields[field]);
     const values = AlertRule.insertableFields.map(field => alertRule[field]);
+
+    // 调试：打印映射后的字段和值
+    console.log('[AlertRuleRepository.create] fields:', fields);
+    console.log('[AlertRuleRepository.create] values:', values);
+
     const placeholders = fields.map(() => '?').join(', ');
     const query = `INSERT INTO ${AlertRule.tableName} (${fields.join(', ')}) VALUES (${placeholders})`;
     const [result] = await pool.execute(query, values);

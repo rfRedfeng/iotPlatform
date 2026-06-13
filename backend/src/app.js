@@ -55,23 +55,24 @@ server.on('upgrade', (request, socket, head) => {
 });
 
 // ========== 启动 ==========
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
     console.log(`🚀 IOT项目运行: http://localhost:${PORT}`);
     console.log(`📁 静态文件服务: http://localhost:${PORT}`);
     console.log(`🔧 API服务: http://localhost:${PORT}/api`);
 
-    import('./services/DeviceService.js');
-    import('./services/UserService.js');
-    import('./services/AreaService.js');
-    import('./services/AlertService.js');
-    import('./services/AuthService.js');
-    import('./services/TenantService.js').then(() => {
-        return import('./services/worker.js');
-    }).then(({ startWorker }) => {
+    try {
+        // 静态导入确保 handler 在 Worker 启动前完成注册
+        await import('./services/DeviceService.js');
+        await import('./services/UserService.js');
+        await import('./services/AreaService.js');
+        await import('./services/AlertService.js');
+        await import('./services/AuthService.js');
+        await import('./services/TenantService.js');
+        const { startWorker } = await import('./services/worker.js');
         startWorker();
-    }).catch(err => {
+    } catch (err) {
         console.error('[Worker] 启动失败:', err.message);
-    });
+    }
 });
 
 export default app;

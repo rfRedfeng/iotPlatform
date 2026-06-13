@@ -60,7 +60,8 @@ export async function createUser(payload, task) {
   return { id: userId, username, role, tenantId: tenantId || task.tenantId };
 }
 
-export async function updateUser(userId, payload, task) {
+export async function updateUser(payload, task) {
+  const { userId, ...updates } = payload;
   const tenantId = task.tenantId;
 
   const existing = await UserRepository.findById(userId);
@@ -68,18 +69,18 @@ export async function updateUser(userId, payload, task) {
     throw new Error('User not found');
   }
 
-  // 如果更新密码，需要重新加密
-  if (payload.password) {
-    payload.passwordHash = await bcrypt.hash(payload.password, BCRYPT_ROUNDS);
-    delete payload.password;
+  if (updates.password) {
+    updates.passwordHash = await bcrypt.hash(updates.password, BCRYPT_ROUNDS);
+    delete updates.password;
   }
 
-  const result = await UserRepository.update(userId, payload);
+  const result = await UserRepository.update(userId, updates);
   if (result) await _invalidateCache(userId);
   return result;
 }
 
-export async function deleteUser(userId, task) {
+export async function deleteUser(payload, task) {
+  const { userId } = payload;
   const tenantId = task.tenantId;
 
   const existing = await UserRepository.findById(userId);

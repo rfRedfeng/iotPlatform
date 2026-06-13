@@ -66,7 +66,8 @@ export async function createRule(payload, task) {
   return { id: ruleId, name, metric, condition, threshold };
 }
 
-export async function updateRule(ruleId, payload, task) {
+export async function updateRule(payload, task) {
+  const { ruleId, ...updates } = payload;
   const tenantId = task.tenantId;
 
   const existing = await AlertRuleRepository.findById(ruleId);
@@ -74,12 +75,13 @@ export async function updateRule(ruleId, payload, task) {
     throw new Error('Rule not found');
   }
 
-  const result = await AlertRuleRepository.update(ruleId, payload);
+  const result = await AlertRuleRepository.update(ruleId, updates);
   if (result) await _invalidateRuleCache(ruleId);
   return result;
 }
 
-export async function deleteRule(ruleId, task) {
+export async function deleteRule(payload, task) {
+  const { ruleId } = payload;
   const tenantId = task.tenantId;
 
   const existing = await AlertRuleRepository.findById(ruleId);
@@ -94,7 +96,8 @@ export async function deleteRule(ruleId, task) {
 
 // ========== 事件确认 ==========
 
-export async function acknowledgeEvent(eventId, payload, task) {
+export async function acknowledgeEvent(payload, task) {
+  const { eventId } = payload;
   const tenantId = task.tenantId;
 
   const event = await AlertEventRepository.findById(eventId);

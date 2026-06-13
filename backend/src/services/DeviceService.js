@@ -93,23 +93,24 @@ export async function createDevice(payload, task) {
   };
 }
 
-export async function updateDevice(deviceId, payload, task) {
-  const tenantId = payload.tenantId || task.tenantId;
+export async function updateDevice(payload, task) {
+  const { deviceId, ...updates } = payload;
+  const tenantId = task.tenantId;
 
-  // 校验归属
   const existing = await DeviceRepository.findById(deviceId);
   if (!existing || existing.tenantId !== tenantId) {
     throw new Error('Device not found');
   }
 
-  const result = await DeviceRepository.update(deviceId, payload);
+  const result = await DeviceRepository.update(deviceId, updates);
   if (result) {
     await _invalidateCache(deviceId);
   }
   return result;
 }
 
-export async function deleteDevice(deviceId, task) {
+export async function deleteDevice(payload, task) {
+  const { deviceId } = payload;
   const tenantId = task.tenantId;
 
   const existing = await DeviceRepository.findById(deviceId);

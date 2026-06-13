@@ -13,10 +13,21 @@ const RESULT_TTL = 300; // 5min 结果过期时间
 const POLL_INTERVAL_MS = 100; // 100ms 轮询一次
 
 // 进行任务处理的主循环
+let running = true;
+
 export async function startWorker() {
   console.log('[Worker] 启动数据处理 Worker');
 
-  while (true) {
+  // 优雅关闭
+  const stop = async () => {
+    if (!running) return;
+    running = false;
+    console.log('[Worker] 收到关闭信号，等待当前任务处理完成...');
+  };
+  process.on('SIGTERM', stop);
+  process.on('SIGINT', stop);
+
+  while (running) {
     try {
       const taskStr = await CacheManager.dequeue(QUEUE_KEY);
       if (!taskStr) {
@@ -46,6 +57,7 @@ export async function startWorker() {
         await _writeResult(task.id, task.tenantId, { status: 'success', data: resultData });
       } catch (err) {
         console.error(`[Worker] 监听任务错误 ${task.id}:`, err.message);
+        console.error(`[Worker] 错误堆栈:`, err.stack);
         await _writeResult(task.id, task.tenantId, { status: 'failed', error: { message: err.message } });
       }
     } catch (err) {
@@ -53,14 +65,21 @@ export async function startWorker() {
       await sleep(POLL_INTERVAL_MS);
     }
   }
+
+  console.log('[Worker] 已停止');
 }
 
 // 将处理结果写入 Redis，并通过 WebSocket 推送给前端
 async function _writeResult(taskId, tenantId, result) {
+  // 防御：确保 result 是对象，防止 ...result 展开报错
+  if (!result || typeof result !== 'object') {
+    result = { status: 'failed', error: { message: 'Handler returned invalid result' } };
+  }
   result.processedAt = new Date().toISOString();
   try {
     await CacheManager.set(`task:result:${taskId}`, JSON.stringify(result), RESULT_TTL);
-    if (tenantId !== undefined) {
+    // tenantId=0 是有效值（系统管理员），只过滤 undefined/null
+    if (tenantId !== undefined && tenantId !== null) {
       RealtimePusher.pushTaskResult(tenantId, taskId, result);
     }
   } catch (err) {

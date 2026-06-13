@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "start": "node src/app.js",
-    "dev": "node --watch src/app.js"
+    "dev": "node --watch src/app.js",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config test/jest.config.js",
+    "test:log": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config test/jest.config.js 2>&1 | tee logs/test-output.log"
   },
   "dependencies": {
     "@tdengine/websocket": "^3.5.0",
@@ -22,5 +24,9 @@
     "mqtt": "^5.3.0",
     "mysql2": "^3.6.5",
     "redis": "^4.6.12"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2",
+    "supertest": "^7.2.2"
   }
 }
