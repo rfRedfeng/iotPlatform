@@ -97,7 +97,7 @@ data-access/
 | tenants | 租户表 | id, name, status, created_at |
 | users | 用户表 | id, tenant_id, username, password_hash, role, created_at |
 | areas | 区域表 | id, tenant_id, name, code, description, parent_id |
-| devices | 设备表 | id, tenant_id, area_id, name, device_key, protocol, status, last_seen |
+| devices | 设备表 | id, tenant_id, area_id, name, device_key, device_secret, protocol, device_type, status, last_seen |
 | device_configs | 设备配置表 | id, device_id, config_key, config_value |
 | alert_rules | 告警规则表 | id, tenant_id, device_id, metric, threshold, condition, enabled |
 | alert_events | 告警事件表 | id, rule_id, device_id, value, triggered_at, acknowledged |
@@ -570,6 +570,7 @@ CREATE TABLE devices (
     device_key VARCHAR(64) NOT NULL UNIQUE,
     device_secret VARCHAR(128) NOT NULL,
     protocol ENUM('mqtt', 'tcp', 'udp', 'coap') NOT NULL,
+    device_type VARCHAR(50) NOT NULL DEFAULT 'generic',  -- 设备类型，用于 TDengine 超表子表创建和指标模板匹配
     status ENUM('online', 'offline', 'inactive') DEFAULT 'offline',
     last_seen TIMESTAMP NULL,
     metadata JSON,
@@ -633,8 +634,11 @@ CREATE TABLE refresh_tokens (
 
 ### 7.2 TDengine 超表设计
 
-**SDK**: `@tdengine/websocket`（WebSocket 方式连接，端口 6041）
+**设计原则**：采用 JSON 动态列方案，支持用户自定义设备类型，所有指标统一存储在 `metrics` 字段中。
 
+**实现说明**：TDengine 3.2.x 不支持 JSON 列类型（JSON 只能作为 TAG），故 `metrics` 字段使用 `VARCHAR(4096)` 存储 JSON 字符串，查询语法与 JSON 类型完全兼容。
+
+**SDK**: `@tdengine/websocket`（WebSocket 方式连接，端口 6041）
 **连接字符串**:
 ```
 ws://root:taosdata@localhost:6041
@@ -645,18 +649,19 @@ ws://root:taosdata@localhost:6041
 CREATE DATABASE iot_db KEEP 30 BUFFER 256;
 ```
 
-**超表结构**（已创建）:
+**超表结构**：
 
 ```sql
--- 设备数据超级表（温度/湿度/电压）
+-- 设备数据超级表（JSON 动态指标，支持自定义设备）
+-- 注意：TDengine 3.2.x 不支持 JSON 列类型，metrics 使用 VARCHAR(4096) 存储 JSON 字符串
 CREATE STABLE device_data (
-    ts TIMESTAMP,           -- 时间戳（自动建索引）
-    temperature FLOAT,      -- 温度
-    humidity FLOAT,         -- 湿度
-    voltage FLOAT           -- 电压
+    ts TIMESTAMP,            -- 时间戳（自动建索引）
+    metrics VARCHAR(4096)    -- 动态指标 JSON 字符串，示例：{"temperature": 25.6, "humidity": 60.2, "power": 220.5}
 ) TAGS (
-    device_id INT,         -- 设备ID（子表标签）
-    area_id INT            -- 区域ID（子表标签）
+    device_id INT,           -- 设备ID（子表标签）
+    tenant_id INT,           -- 租户ID（用于租户隔离查询）
+    area_id INT,             -- 区域ID（子表标签）
+    device_type VARCHAR(50)  -- 设备类型标识，便于按类型聚合查询
 );
 
 -- 设备状态超级表（在线/离线）
@@ -665,17 +670,41 @@ CREATE STABLE device_status (
     status VARCHAR(20)     -- online / offline / inactive
 ) TAGS (
     device_id INT,         -- 设备ID（子表标签）
-    area_id INT            -- 区域ID（子表标签）
+    tenant_id INT,        -- 租户ID（用于租户隔离查询）
+    area_id INT,           -- 区域ID（子表标签）
+    device_type VARCHAR(50)  -- 设备类型标识，便于按类型聚合查询
 );
 ```
 
 **子表创建示例**（设备接入时自动创建）:
 ```sql
 -- 根据 device_id 创建设备子表
-CREATE TABLE IF NOT EXISTS d1001 USING device_data TAGS (1001, 5);
+-- 注意：device_type 需与 MySQL devices 表中的 device_type 保持一致
+CREATE TABLE IF NOT EXISTS d1001 USING device_data TAGS (1001, 1, 5, 'temperature_sensor');
 
--- 插入数据
-INSERT INTO d1001 VALUES (NOW, 25.6, 60.2, 220.5);
+-- 插入数据（metrics 为 JSON 格式）
+INSERT INTO d1001 VALUES (NOW, '{"temperature": 25.6, "humidity": 60.2}');
+
+-- 气体检测器示例
+INSERT INTO d1001 VALUES (NOW, '{"CO2": 400, "PM2.5": 35, "formaldehyde": 0.02}');
+
+-- GPS追踪器示例
+INSERT INTO d1001 VALUES (NOW, '{"lat": 39.9042, "lng": 116.4074, "altitude": 50.5, "speed": 0}');
+```
+
+**查询示例**：
+```sql
+-- 按设备查询最新数据
+SELECT * FROM d1001 ORDER BY ts DESC LIMIT 1;
+
+-- 按指标查询（JSON 路径表达式）
+SELECT ts, metrics->>'$.temperature' AS temp FROM d1001 WHERE metrics->>'$.temperature' > 30;
+
+-- 按租户隔离查询（利用 tag 索引高效筛选）
+SELECT * FROM device_data WHERE tenant_id = 1 AND ts > NOW - 1h;
+
+-- 按设备类型聚合（利用 tag 索引）
+SELECT AVG(metrics->>'$.temperature') FROM device_data WHERE device_type = 'temperature_sensor' AND ts > NOW - 1d GROUP BY device_id;
 ```
 
 **Node.js 接入示例**:
@@ -686,11 +715,11 @@ const { WSConfig } = require('@tdengine/websocket/src/common/config');
 const conf = new WSConfig('ws://root:taosdata@localhost:6041');
 const wsSql = await sqlConnect(conf);
 
-// 插入
-await wsSql.exec('INSERT INTO d1001 USING device_data TAGS (1, 5) VALUES (NOW, 25.6, 60.2, 220.5)');
+// 插入 JSON 动态指标（metrics 为 JSON 字符串，TDengine 3.2 用 VARCHAR 存储）
+await wsSql.exec(`INSERT INTO d1001 USING device_data TAGS (1001, 1, 5, 'temperature_sensor') VALUES (NOW, '{"temperature": 25.6, "humidity": 60.2}')`);
 
 // 查询（游标遍历）
-const rows = await wsSql.query('SELECT * FROM device_data WHERE ts > NOW - 1h');
+const rows = await wsSql.query(`SELECT * FROM device_data WHERE tenant_id = 1 AND ts > NOW - 1h`);
 while (await rows.next()) {
     console.log(rows.getData());
 }
@@ -698,6 +727,17 @@ await rows.close();
 await wsSql.close();
 destroy();
 ```
+
+**JSON 动态指标设计说明**：
+- `metrics` 字段使用 `VARCHAR(4096)` 存储 JSON 字符串（TDengine 3.2.x 列类型限制），查询语法与 JSON 类型完全兼容
+- `metrics` JSON 字符串支持任意指标组合，无需修改表结构
+- 常见设备类型的 `metrics` 示例：
+  - 温湿度传感器：`{"temperature": 25.6, "humidity": 60.2}`
+  - 气体检测器：`{"CO2": 400, "PM2.5": 35, "formaldehyde": 0.02}`
+  - GPS追踪器：`{"lat": 39.9042, "lng": 116.4074, "altitude": 50.5, "speed": 0}`
+  - 智能电表：`{"power": 2200, "energy": 1234.56, "voltage": 220.5}`
+- 查询 JSON 内部字段使用 `metrics->>'$.key'` 语法
+- MySQL `devices` 表已增加 `device_type` VARCHAR(50) 字段，用于标识设备类型并同步到 TDengine 子表 TAG
 
 ---
 
