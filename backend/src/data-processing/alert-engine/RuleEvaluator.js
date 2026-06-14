@@ -13,19 +13,22 @@ class RuleEvaluator {
   }
 
   checkCondition(condition, threshold, data) {
+    // S-10: 强制 Number(data) 防止字符串/数字混比导致误判
+    const value = Number(data);
+    if (Number.isNaN(value)) return false;
     switch (condition) {
       case 'gt':
-        return data > threshold;
+        return value > threshold;
       case 'lt':
-        return data < threshold;
+        return value < threshold;
       case 'gte':
-        return data >= threshold;
+        return value >= threshold;
       case 'lte':
-        return data <= threshold;
+        return value <= threshold;
       case 'eq':
-        return data === threshold;
+        return value === threshold;
       case 'ne':
-        return data !== threshold;
+        return value !== threshold;
       default:
         return false;
     }

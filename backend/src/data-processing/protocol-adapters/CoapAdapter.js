@@ -27,35 +27,32 @@ class CoapAdapter {
     }
 
     return new Promise((resolve, reject) => {
+      // S-7: listen 失败时清 this.server,防止后续 close() 操作空对象
+      const cleanup = () => { this.server = null; };
       try {
         this.server = this.coap.createServer((req, res) => {
           console.log(`CoAP ${req.method} request from ${req.url}`);
 
-          // 获取请求数据
           let data = req.payload;
           if (req.options && req.options['Content-Format']) {
             const format = req.options['Content-Format'];
-            // 处理不同的 Content-Format
             if (format === 'application/json') {
               try {
                 data = JSON.parse(data.toString());
-              } catch (e) {
-                // 解析失败，保持原数据
-              }
+              } catch (e) { /* 解析失败保持原数据 */ }
             }
           }
 
-          // 触发消息回调
           if (this.messageHandler) {
             this.messageHandler(req, res, data);
           }
 
-          // 默认响应
           res.end('OK');
         });
 
         this.server.on('error', (error) => {
           console.error('CoAP server error:', error.message);
+          cleanup();
           reject(error);
         });
 
@@ -65,6 +62,7 @@ class CoapAdapter {
         });
       } catch (error) {
         console.error('Failed to create CoAP server:', error.message);
+        cleanup();
         reject(error);
       }
     });
