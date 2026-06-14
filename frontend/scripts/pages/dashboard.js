@@ -40,7 +40,10 @@ export function render(root) {
             gap: '0.75rem', marginBottom: '1.5rem',
         },
     });
-    const trendContainer = h('div', { id: 'dashboard-trend', style: { height: '300px', position: 'relative' } });
+    const trendContainer = h('div', {
+        id: 'dashboard-trend',
+        style: { display: 'flex', flexWrap: 'wrap', gap: '1rem' },
+    });
 
     const main = h('main', { class: 'main' }, [
         h('div', { id: 'page-content' }, [
@@ -135,21 +138,25 @@ export function render(root) {
         }
     }
 
+    // 为不同指标配不同颜色
+    const METRIC_COLORS = [
+        '#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c',
+        '#e67e22', '#2980b9', '#27ae60', '#8e44ad',
+    ];
+
     async function loadTrend() {
         const devices = getState().devices || [];
         const hint = main.querySelector('#trend-hint');
 
         if (devices.length === 0) {
             if (hint) hint.textContent = getState().selectedAreaId
-                ? '该区域暂无设备,无法显示趋势'
-                : '请先创建设备';
+                ? '该区域暂无设备,无法显示趋势' : '请先创建设备';
             trendContainer.replaceChildren(
                 h('p', { style: { color: '#7f8c8d' } }, '暂无设备数据')
             );
             return;
         }
 
-        // 优先使用选中的设备,否则第一台
         const targetDevice = selectedTrendDeviceId
             ? devices.find(d => d.id === selectedTrendDeviceId)
             : devices[0];
@@ -160,32 +167,70 @@ export function render(root) {
         const endTime = new Date().toISOString();
         const startTime = new Date(Date.now() - opt.ms).toISOString();
 
+        // 探测该设备所有可用指标
+        let metrics = [];
         try {
-            const data = await api.getDashboardTrends(targetDevice.id, 'value', startTime, endTime, opt.interval);
-            const points = data?.dataPoints || [];
-            if (hint) {
-                hint.textContent = `已选: ${targetDevice.name} · 最近 ${opt.label} · ${points.length} 个数据点`;
+            const latest = await api.getDeviceData(targetDevice.id);
+            if (latest && Array.isArray(latest) && latest.length > 0) {
+                const m = typeof latest[0].metrics === 'string' ? JSON.parse(latest[0].metrics) : latest[0].metrics;
+                if (m && typeof m === 'object') {
+                    metrics = Object.keys(m).filter(k => typeof m[k] === 'number');
+                }
             }
-            if (points.length === 0) {
-                trendContainer.replaceChildren(
-                    h('p', { style: { color: '#7f8c8d' } }, `"${targetDevice.name}" 最近 ${opt.label} 无上报数据`)
-                );
-                return;
-            }
-            trendContainer.replaceChildren(
-                h('canvas', { id: 'trend-canvas', style: { maxHeight: '300px' } })
-            );
-            const canvas = trendContainer.querySelector('#trend-canvas');
-            renderChart(canvas, {
-                labels: points.map(d => formatShort(d.timestamp)),
-                values: points.map(d => Number(d.value ?? 0)),
-            }, { label: `${targetDevice.name} / value`, color: '#9b59b6' });
-        } catch (e) {
-            console.error('[dashboard] trend failed', e);
-            trendContainer.replaceChildren(
-                h('p', { style: { color: '#e74c3c' } }, '趋势加载失败: ' + e.message)
-            );
+        } catch { /* fallback */ }
+        if (metrics.length === 0) metrics = ['temperature'];
+
+        // 为每个指标独立拉趋势 + 渲染一张图
+        trendContainer.replaceChildren(
+            h('p', { style: { width: '100%', color: '#7f8c8d', fontSize: '0.85rem', margin: '0' } },
+                `已选: ${targetDevice.name} · 最近 ${opt.label}`)
+        );
+
+        const charts = [];
+        for (let i = 0; i < metrics.length; i++) {
+            const metric = metrics[i];
+            const wrapper = h('div', {
+                style: {
+                    flex: '1 1 450px', minWidth: '320px', maxWidth: '650px',
+                    background: 'white', borderRadius: '8px', padding: '0.75rem',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
+                },
+            }, [
+                h('div', { style: { fontSize: '0.85rem', fontWeight: 'bold', color: METRIC_COLORS[i % METRIC_COLORS.length], marginBottom: '0.4rem' } },
+                    metric),
+                h('canvas', { style: { maxHeight: '220px' } }),
+                h('div', { style: { fontSize: '0.75rem', color: '#95a5a6', marginTop: '0.25rem', textAlign: 'center' } },
+                    '加载中...'),
+            ]);
+            trendContainer.appendChild(wrapper);
+            charts.push({ wrapper, metric, idx: i });
         }
+
+        // 并行拉取所有指标趋势
+        await Promise.all(charts.map(async (c) => {
+            try {
+                const data = await api.getDashboardTrends(targetDevice.id, c.metric, startTime, endTime, opt.interval);
+                const points = data?.dataPoints || [];
+                const statusEl = c.wrapper.querySelector('div:last-child');
+                if (points.length === 0) {
+                    if (statusEl) statusEl.textContent = '无数据';
+                    return;
+                }
+                if (statusEl) statusEl.textContent = `${points.length} 个数据点`;
+                const canvas = c.wrapper.querySelector('canvas');
+                const color = METRIC_COLORS[c.idx % METRIC_COLORS.length];
+                renderChart(canvas, {
+                    labels: points.map(d => formatShort(d.timestamp)),
+                    values: points.map(d => Number(d.value ?? 0)),
+                }, { label: c.metric, color, tension: 0.4, fill: true });
+            } catch (e) {
+                const statusEl = c.wrapper.querySelector('div:last-child');
+                if (statusEl) { statusEl.textContent = '加载失败'; statusEl.style.color = '#e74c3c'; }
+                console.error('[dashboard] trend failed for', c.metric, e);
+            }
+        }));
+
+        if (hint) hint.textContent = '';
     }
 
     function repaintSummary() {
