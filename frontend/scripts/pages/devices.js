@@ -170,7 +170,27 @@ export function render(root) {
         });
     }
 
+    // 截断长字符串: 前12 + ... + 后4 (Key固定36字符,Secret固定68字符)
+    function truncateKey(str) {
+        if (!str || str.length <= 20) return str || '-';
+        return str.slice(0, 12) + '...' + str.slice(-4);
+    }
+
     function deviceRow(d) {
+        // Secret 可见性 (每个cell独立状态)
+        let secretVisible = false;
+        const secretEl = h('code', { style: codeStyle }, '●●●●●●●●●●●●●●●');
+        const toggleBtn = h('button', {
+            style: { padding: '0.15rem 0.35rem', fontSize: '0.75rem' },
+            title: '显示/隐藏',
+            onclick: (e) => {
+                e.stopPropagation();
+                secretVisible = !secretVisible;
+                secretEl.textContent = secretVisible ? (d.deviceSecret || '-') : '●●●●●●●●●●●●●●●';
+                toggleBtn.textContent = secretVisible ? '🙈' : '👁';
+            },
+        }, '👁');
+
         return h('tr', {}, [
             td(String(d.id ?? '-')),
             td(d.name ?? '-'),
@@ -178,20 +198,21 @@ export function render(root) {
             td(areaName(d.areaId)),
             td(d.protocol ?? '-'),
             td(h('div', { style: { display: 'flex', alignItems: 'center', gap: '0.25rem' } }, [
-                h('code', { style: codeStyle, title: '点击 📋 复制' }, d.deviceKey || '-'),
+                h('code', { style: codeStyle, title: d.deviceKey || '' }, truncateKey(d.deviceKey)),
                 h('button', {
                     style: { padding: '0.15rem 0.35rem', fontSize: '0.75rem' },
-                    title: '复制 deviceKey',
+                    title: '复制完整 deviceKey',
                     onclick: (e) => { e.stopPropagation(); copyText(d.deviceKey, 'deviceKey'); },
                 }, '📋'),
             ])),
             td(h('div', { style: { display: 'flex', alignItems: 'center', gap: '0.25rem' } }, [
-                h('code', { style: codeStyle, title: '点击 📋 复制' }, d.deviceSecret || '-'),
+                secretEl,
                 h('button', {
                     style: { padding: '0.15rem 0.35rem', fontSize: '0.75rem' },
                     title: '复制 deviceSecret',
                     onclick: (e) => { e.stopPropagation(); copyText(d.deviceSecret, 'deviceSecret'); },
                 }, '📋'),
+                toggleBtn,
                 h('button', {
                     style: { padding: '0.15rem 0.35rem', fontSize: '0.75rem', background: '#f39c12' },
                     title: '重新生成 deviceSecret',

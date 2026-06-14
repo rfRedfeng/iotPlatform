@@ -8,6 +8,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import RealtimePusher from './data-processing/RealtimePusher.js';
+import DataPipeline from './data-processing/DataPipeline.js';
+import DeviceTcpServer from './data-processing/protocol-adapters/DeviceTcpServer.js';
 import { verifyRefreshToken } from './services/AuthService.js';
 import routes from './routes/index.js';
 
@@ -97,8 +99,14 @@ server.listen(PORT, async () => {
         await import('./services/TenantService.js');
         const { startWorker } = await import('./services/worker.js');
         startWorker();
+
+        // TCP 设备上报服务器 (Device Key + Secret 认证)
+        DeviceTcpServer.onData((device, metrics) =>
+          DataPipeline.processDevicePayload(device, metrics)
+        );
+        await DeviceTcpServer.start();
     } catch (err) {
-        console.error('[Worker] 启动失败:', err.message);
+        console.error('[启动] 失败:', err.message);
     }
 });
 

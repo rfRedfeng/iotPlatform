@@ -148,7 +148,8 @@ async function seedData(conn) {
   // 1. 创建默认租户
   await conn.query(`
     INSERT IGNORE INTO tenants (id, name, status, max_devices, max_users)
-    VALUES (1, 'Demo Tenant', 'active', 1000, 50)
+    VALUES (1, '管理组', 'active', 1000, 50),
+            (2, '测试租户', 'active', 500, 20)
   `);
   console.log('✅ 租户数据已插入');
 
@@ -156,21 +157,21 @@ async function seedData(conn) {
   const adminPasswordHash = await bcrypt.hash('admin123', BCRYPT_ROUNDS);
   await conn.query(`
     INSERT IGNORE INTO users (tenant_id, username, password_hash, role, email)
-    VALUES (0, 'admin', ?, 'admin', 'admin@iot.local')
+    VALUES (1, 'admin', ?, 'admin', 'admin@iot.local')
   `, [adminPasswordHash]);
 
   // 创建租户内管理员
   const managerPasswordHash = await bcrypt.hash('manager123', BCRYPT_ROUNDS);
   await conn.query(`
     INSERT IGNORE INTO users (tenant_id, username, password_hash, role, email)
-    VALUES (1, 'manager', ?, 'manager', 'manager@iot.local')
+    VALUES (2, 'manager', ?, 'manager', 'manager@iot.local')
   `, [managerPasswordHash]);
 
   // 创建普通用户
   const userPasswordHash = await bcrypt.hash('user123', BCRYPT_ROUNDS);
   await conn.query(`
     INSERT IGNORE INTO users (tenant_id, username, password_hash, role, email)
-    VALUES (1, 'user', ?, 'user', 'user@iot.local')
+    VALUES (2, 'user', ?, 'user', 'user@iot.local')
   `, [userPasswordHash]);
   console.log('✅ 用户数据已插入（admin/admin123, manager/manager123, user/user123）');
 
@@ -178,11 +179,11 @@ async function seedData(conn) {
   await conn.query(`
     INSERT IGNORE INTO areas (id, tenant_id, parent_id, name, code, description)
     VALUES
-      (1, 1, NULL, '总部大楼', 'HQ', '总部办公大楼'),
-      (2, 1, 1, '1号楼', 'HQ-B1', '1号办公楼'),
-      (3, 1, 1, '2号楼', 'HQ-B2', '2号办公楼'),
-      (4, 1, 2, '1层', 'HQ-B1-F1', '1号楼1层'),
-      (5, 1, 2, '2层', 'HQ-B1-F2', '1号楼2层')
+      (1, 2, NULL, '总部大楼', 'HQ', '总部办公大楼'),
+      (2, 2, 1, '1号楼', 'HQ-B1', '1号办公楼'),
+      (3, 2, 1, '2号楼', 'HQ-B2', '2号办公楼'),
+      (4, 2, 2, '1层', 'HQ-B1-F1', '1号楼1层'),
+      (5, 2, 2, '2层', 'HQ-B1-F2', '1号楼2层')
   `);
   console.log('✅ 区域数据已插入');
 
@@ -190,9 +191,9 @@ async function seedData(conn) {
   await conn.query(`
     INSERT IGNORE INTO devices (id, tenant_id, area_id, name, device_key, device_secret, protocol, device_type, status)
     VALUES
-      (1, 1, 4, '温湿度传感器-001', 'dev_a1b2c3d4e5f6', 'sec_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', 'mqtt', 'temperature_sensor', 'offline'),
-      (2, 1, 4, '温湿度传感器-002', 'dev_f6e5d4c3b2a1', 'sec_yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy', 'mqtt', 'temperature_sensor', 'offline'),
-      (3, 1, 5, '气体检测器-001', 'dev_gas001', 'sec_gas001sec001sec001sec001sec001', 'tcp', 'gas_sensor', 'offline')
+      (1, 2, 4, '温湿度传感器-001', 'dev_a1b2c3d4e5f6', 'sec_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', 'mqtt', 'temperature_sensor', 'offline'),
+      (2, 2, 4, '温湿度传感器-002', 'dev_f6e5d4c3b2a1', 'sec_yyyyyyyyyyyyyyyyyyyyyyyyyyyyyy', 'mqtt', 'temperature_sensor', 'offline'),
+      (3, 2, 5, '气体检测器-001',   'dev_gas001dasdas', 'sec_gas001sec001sec001sec001sec001', 'tcp', 'gas_sensor', 'offline')
   `);
   console.log('✅ 设备数据已插入');
 
@@ -200,9 +201,9 @@ async function seedData(conn) {
   await conn.query(`
     INSERT IGNORE INTO alert_rules (id, tenant_id, device_id, name, metric, \`condition\`, threshold, duration_seconds, enabled)
     VALUES
-      (1, 1, 1, '温度过高告警', 'temperature', 'gt', 35.0, 0, TRUE),
-      (2, 1, 1, '湿度过低告警', 'humidity', 'lt', 30.0, 60, TRUE),
-      (3, 1, 3, 'CO2浓度过高', 'CO2', 'gt', 1000.0, 0, TRUE)
+      (1, 2, 1, '温度过高告警', 'temperature', 'gt', 35.0, 0, TRUE),
+      (2, 2, 1, '湿度过低告警', 'humidity', 'lt', 30.0, 60, TRUE),
+      (3, 2, 3, 'CO2浓度过高', 'CO2', 'gt', 1000.0, 0, TRUE)
   `);
   console.log('✅ 告警规则数据已插入');
 }
@@ -219,9 +220,9 @@ async function main() {
 
     console.log('\n🎉 数据库初始化完成！\n');
     console.log('测试账号:');
-    console.log('  admin/admin123    (系统管理员, tenant_id=0)');
-    console.log('  manager/manager123 (租户管理员, tenant_id=1)');
-    console.log('  user/user123      (普通用户, tenant_id=1)');
+    console.log('  admin/admin123    (系统管理员, tenant_id=1)');
+    console.log('  manager/manager123 (租户管理员, tenant_id=2)');
+    console.log('  user/user123      (普通用户, tenant_id=2)');
   } catch (err) {
     console.error('❌ 初始化失败:', err.message);
     process.exit(1);

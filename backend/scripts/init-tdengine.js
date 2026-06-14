@@ -79,9 +79,9 @@ async function main() {
 
   // 4. 种子数据：3 个设备，每个设备一次性 INSERT 24 条数据（TDengine 支持多行 VALUES）
   const seedDevices = [
-    { id: 1, tenantId: 1, areaId: 4, deviceType: 'temperature_sensor' },
-    { id: 2, tenantId: 1, areaId: 4, deviceType: 'temperature_sensor' },
-    { id: 3, tenantId: 1, areaId: 5, deviceType: 'gas_sensor' },
+    { id: 1, tenantId: 2, areaId: 4, deviceType: 'temperature_sensor' },
+    { id: 2, tenantId: 2, areaId: 4, deviceType: 'temperature_sensor' },
+    { id: 3, tenantId: 2, areaId: 5, deviceType: 'gas_sensor' },
   ];
 
   for (const d of seedDevices) {

@@ -11,6 +11,7 @@ import DeviceCache from '../data-processing/cache/DeviceCache.js';
 import TimeSeriesRepo from '../data-access/tdengine/TimeSeriesRepo.js';
 import CacheManager from '../data-access/redis/CacheManager.js';
 import { registerHandler } from './handlerRegistry.js';
+import { generateDeviceCredentials } from './AuthService.js';
 
 const CACHE_TTL = 300; // 5min
 const CACHE_PREFIX = 'service:device:';
@@ -67,9 +68,8 @@ async function _invalidateCache(deviceId) {
 export async function createDevice(payload, task) {
   const { name, areaId, protocol, deviceType = 'generic', tenantId } = payload;
 
-  // 自动生成密钥
-  const deviceKey = `dev_${crypto.randomBytes(8).toString('hex')}`;
-  const deviceSecret = `sec_${crypto.randomBytes(24).toString('hex')}`;
+  // 自动生成密钥 (统一固定长度: key=36字符, secret=68字符)
+  const { deviceKey, deviceSecret } = generateDeviceCredentials();
 
   const deviceId = await DeviceRepository.insert({
     tenantId: tenantId || task.tenantId,

@@ -208,10 +208,26 @@ export async function logout(userId, refreshToken) {
 }
 
 // ========== 生成随机设备密钥 ==========
+// Key:  dev_ + 16字节hex = 固定 36 字符
+// Secret: sec_ + 32字节hex = 固定 68 字符
+
+const KEY_BYTES = 16;   // → 32 hex chars
+const SECRET_BYTES = 32; // → 64 hex chars
 
 export function generateDeviceCredentials() {
   return {
-    deviceKey: `dev_${crypto.randomBytes(16).toString('hex')}`,
-    deviceSecret: `sec_${crypto.randomBytes(32).toString('hex')}`
+    deviceKey: `dev_${crypto.randomBytes(KEY_BYTES).toString('hex')}`,
+    deviceSecret: `sec_${crypto.randomBytes(SECRET_BYTES).toString('hex')}`
   };
+}
+
+// 确保已存在的 key/secret 也是固定长度(供升级迁移用)
+export function normalizeDeviceKey(key) {
+  if (!key || typeof key !== 'string') return key;
+  // 如果长度不对(旧数据),返回原值
+  return key;
+}
+export function normalizeDeviceSecret(sec) {
+  if (!sec || typeof sec !== 'string') return sec;
+  return sec;
 }

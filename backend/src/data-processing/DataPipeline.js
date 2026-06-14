@@ -93,8 +93,20 @@ class DataPipeline {
     }
 
     // 6. 实时推送数据到前端
-    await RealtimePusher.pushDeviceData(tenantId, deviceId, metrics);
-    await RealtimePusher.pushDeviceStatus(tenantId, deviceId, 'online');
+    await RealtimePusher.pushDeviceData(_tenantId, _deviceId, metrics);
+    await RealtimePusher.pushDeviceStatus(_tenantId, _deviceId, 'online');
+  }
+
+  /**
+   * TCP 协议便捷入口: 接收已认证的 device 对象 + 已解析的 metrics
+   * 供 DeviceTcpServer.onData 回调使用
+   */
+  async processDevicePayload(device, metrics) {
+    return this.processData(
+      device.id, device.tenantId, device.areaId,
+      device.deviceKey, device.deviceSecret,
+      device.deviceType, metrics  // 直接传 JS 对象,内部会走 JsonParser.parse(object)
+    );
   }
 }
 
