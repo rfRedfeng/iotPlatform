@@ -56,7 +56,8 @@ router.post('/register', async (req, res, next) => {
       id: taskId,
       type: 'auth.register',
       payload: { username, password, role, email },
-      tenantId: req.user?.tenantId ?? 0,
+      // 缺省归到默认租户（1），避免 tenant_id=0 触发外键失败
+      tenantId: req.user?.tenantId ?? 1,
       userId: req.user?.userId,
       timestamp: new Date().toISOString()
     };

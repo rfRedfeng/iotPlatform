@@ -133,7 +133,7 @@ async function createTables(conn) {
     CREATE TABLE IF NOT EXISTS refresh_tokens (
       id INT PRIMARY KEY AUTO_INCREMENT,
       user_id INT NOT NULL,
-      token VARCHAR(255) NOT NULL UNIQUE,
+      token VARCHAR(512) NOT NULL UNIQUE,
       expires_at TIMESTAMP NOT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id)
@@ -152,11 +152,11 @@ async function seedData(conn) {
   `);
   console.log('✅ 租户数据已插入');
 
-  // 2. 创建系统管理员 (tenant_id=0)
+  // 2. 创建系统管理员（划归默认租户，方便后续给租户内创建用户）
   const adminPasswordHash = await bcrypt.hash('admin123', BCRYPT_ROUNDS);
   await conn.query(`
     INSERT IGNORE INTO users (tenant_id, username, password_hash, role, email)
-    VALUES (0, 'admin', ?, 'admin', 'admin@iot.local')
+    VALUES (1, 'admin', ?, 'admin', 'admin@iot.local')
   `, [adminPasswordHash]);
 
   // 创建租户内管理员

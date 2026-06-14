@@ -13,6 +13,11 @@ import routes from './routes/index.js';
 // 加载环境变量
 dotenv.config();
 
+// @tdengine/websocket 内置的 winston-daily-rotate-file transport 在每次 WsClient 实例化时
+// 都会给内部 stream 挂 error/finish 监听器。在测试 / 高频连接场景下会突破 Node 默认 10 个上限。
+// 主动调高全局监听器数量，避免 MaxListenersExceededWarning 噪声。
+process.setMaxListeners(50);
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 const __filename = fileURLToPath(import.meta.url);

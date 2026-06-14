@@ -32,7 +32,7 @@ export async function getSummary(tenantId) {
   todayStart.setHours(0, 0, 0, 0);
 
   const allEvents = await AlertEventRepository.findByTenantId(tenantId, { page: 1, pageSize: 1000 });
-  const todayAlerts = (allEvents || []).filter(e => new Date(e.triggered_at) >= todayStart).length;
+  const todayAlerts = (allEvents || []).filter(e => new Date(e.triggeredAt) >= todayStart).length;
   const unacknowledgedAlerts = (allEvents || []).filter(e => !e.acknowledged).length;
 
   // 从 Redis 获取实时告警计数

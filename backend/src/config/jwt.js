@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 
 const ACCESS_TOKEN_EXPIRY = '15m';
@@ -18,11 +19,13 @@ const jwtConfig = {
 
 /**
  * 签发 Access Token
+ * jti 必带：即便同 payload + 同 iat 也能区分，避免后续入库时 UNIQUE 冲突
  */
 export function signAccessToken(payload) {
   return jwt.sign(payload, jwtConfig.secret, {
     expiresIn: ACCESS_TOKEN_EXPIRY,
     issuer: jwtConfig.issuer,
+    jwtid: crypto.randomUUID(),
   });
 }
 
@@ -33,6 +36,7 @@ export function signRefreshToken(payload) {
   return jwt.sign(payload, jwtConfig.secret, {
     expiresIn: REFRESH_TOKEN_EXPIRY,
     issuer: jwtConfig.issuer,
+    jwtid: crypto.randomUUID(),
   });
 }
 

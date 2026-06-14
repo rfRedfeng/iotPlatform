@@ -45,10 +45,10 @@ export async function getTree(tenantId) {
   });
 
   areas.forEach(area => {
-    if (area.parent_id === null) {
+    if (area.parentId === null) {
       roots.push(map[area.id]);
-    } else if (map[area.parent_id]) {
-      map[area.parent_id].children.push(map[area.id]);
+    } else if (map[area.parentId]) {
+      map[area.parentId].children.push(map[area.id]);
     }
   });
 
@@ -92,8 +92,8 @@ export async function updateArea(payload, task) {
   const result = await AreaRepository.update(areaId, updates);
   if (result) {
     await _invalidateCache(areaId);
-    if (existing.parent_id) {
-      await _invalidateCache(existing.parent_id);
+    if (existing.parentId) {
+      await _invalidateCache(existing.parentId);
     }
   }
   return result;
@@ -111,8 +111,8 @@ export async function deleteArea(payload, task) {
   const result = await AreaRepository.delete(areaId);
   if (result) {
     await _invalidateCache(areaId);
-    if (existing.parent_id) {
-      await _invalidateCache(existing.parent_id);
+    if (existing.parentId) {
+      await _invalidateCache(existing.parentId);
     }
   }
   return result;

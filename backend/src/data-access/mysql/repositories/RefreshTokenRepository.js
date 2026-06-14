@@ -1,15 +1,17 @@
 import RefreshToken from '../models/RefreshToken.js';
 import dataSource from '../DataSourceManger.js';
+import { rowToCamel } from '../utils/rowMapper.js';
 
 // Refresh_token的存储和查询
 class RefreshTokenRepository {
   async create(data) {
     const pool = dataSource.getMysqlPool();
-    const fields = RefreshToken.insertableFields;
+    const fields = RefreshToken.insertableFields.map(f => RefreshToken.fields[f]);
     const placeholders = fields.map(() => '?').join(', ');
+    const values = RefreshToken.insertableFields.map(f => data[f] ?? null);
     const [result] = await pool.execute(
       `INSERT INTO ${RefreshToken.tableName} (${fields.join(', ')}) VALUES (${placeholders})`,
-      fields.map(field => data[field])
+      values
     );
     return result.insertId;
   }
@@ -20,7 +22,7 @@ class RefreshTokenRepository {
       `SELECT * FROM ${RefreshToken.tableName} WHERE ${RefreshToken.fields.token} = ?`,
       [token]
     );
-    return rows[0] || null;
+    return rowToCamel(rows[0]) || null;
   }
 
   async deleteByToken(token) {

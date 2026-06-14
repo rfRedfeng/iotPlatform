@@ -4,7 +4,7 @@
  */
 import { jest, describe, test, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 import request from 'supertest';
-import { app, server } from '../test-server.js';
+import { app, server, closeWorker } from '../test-server.js';
 import { adminToken } from '../helpers/auth.js';
 import { clearRedisQueue } from '../setup.js';
 import {
@@ -237,4 +237,11 @@ describe('PUT /api/alerts/events/:id/ack（异步）', () => {
     expect(res.status).toBe(202);
     expect(res.body.taskId).toBeDefined();
   });
+});
+
+// 文件级清理：排空 Redis 队列里所有残留任务，关闭后台 Worker
+// 必须在所有 describe 之后才能让 beforeAll 拉起过的 Worker 安全停掉
+afterAll(async () => {
+  await clearRedisQueue();
+  await closeWorker();
 });

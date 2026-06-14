@@ -56,6 +56,53 @@ server.on('upgrade', (request, socket, head) => {
   });
 });
 
+// 启动 Worker（异步任务消费者），让 POST 202 异步接口的测试能等到 task:result
+let workerStartedOnce = false;
+async function ensureWorker() {
+  const { isWorkerRunning, startWorker } = await import('../src/services/worker.js');
+  if (isWorkerRunning()) return; // 已经在跑，直接返回
+
+  if (!workerStartedOnce) {
+    workerStartedOnce = true;
+    // 先把所有 service 静态导入，确保 handler 注册完成，再启动 worker
+    await import('../src/services/DeviceService.js');
+    await import('../src/services/UserService.js');
+    await import('../src/services/AreaService.js');
+    await import('../src/services/AlertService.js');
+    await import('../src/services/AuthService.js');
+    await import('../src/services/TenantService.js');
+  }
+  startWorker();
+}
+ensureWorker();
+
+/**
+ * 关闭后台 Worker，让 Jest 测试结束后不会有"Cannot log after tests are done"警告
+ * Worker 是可重启的，下个 describe 的 beforeAll 通过 ensureWorker() 自动恢复
+ */
+export async function closeWorker() {
+  const { stopWorker } = await import('../src/services/worker.js');
+  stopWorker();
+}
+
+/**
+ * 测试文件最终关闭 Worker，并等待循环退出，避免 forceExit 强制杀进程
+ */
+export async function closeAllBackgroundWorkers() {
+  const { stopWorker } = await import('../src/services/worker.js');
+  stopWorker();
+  await new Promise(r => setTimeout(r, 200));
+}
+
+// 每个测试文件结束时统一兜底关闭
+process.once('beforeExit', () => stopWorker_safe());
+async function stopWorker_safe() {
+  try {
+    const { stopWorker } = await import('../src/services/worker.js');
+    stopWorker();
+  } catch { /* 测试结束时模块可能已卸载 */ }
+}
+
 // 导出 app 和 createTestServer 函数
 export { app, server };
 export default app;

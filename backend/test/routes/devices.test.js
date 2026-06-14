@@ -4,7 +4,7 @@
  */
 import { jest, describe, test, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 import request from 'supertest';
-import { app, server } from '../test-server.js';
+import { app, server, closeWorker } from '../test-server.js';
 import { adminToken } from '../helpers/auth.js';
 import { clearRedisQueue } from '../setup.js';
 import { cleanupTables, seedTenant, seedArea, seedDevice, closePool } from '../helpers/seed.js';
@@ -202,4 +202,9 @@ describe('DELETE /api/devices/:id（异步）', () => {
     expect(result).not.toBeNull();
     expect(result.status).toBe('success');
   });
+});
+// 文件级清理
+afterAll(async () => {
+  await clearRedisQueue();
+  await closeWorker();
 });

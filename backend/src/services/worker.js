@@ -14,19 +14,39 @@ const POLL_INTERVAL_MS = 100; // 100ms 轮询一次
 
 // 进行任务处理的主循环
 let running = true;
+let activePromise = null; // 当前运行中的 Worker Promise（用于 stop 后再 start）
+
+export function stopWorker() {
+  if (!running) return;
+  running = false;
+  // 静默切换 running 标志，避免 jest 测试期间打印噪声
+}
+
+export function isWorkerRunning() {
+  return activePromise !== null;
+}
 
 export async function startWorker() {
+  if (activePromise) return activePromise; // 已经在跑就不重复启动
+
   console.log('[Worker] 启动数据处理 Worker');
 
-  // 优雅关闭
-  const stop = async () => {
-    if (!running) return;
-    running = false;
-    console.log('[Worker] 收到关闭信号，等待当前任务处理完成...');
-  };
-  process.on('SIGTERM', stop);
-  process.on('SIGINT', stop);
+  // 优雅关闭（仅注册一次，避免重复监听）
+  if (!stopWorker._signalsBound) {
+    stopWorker._signalsBound = true;
+    const stop = () => stopWorker();
+    process.once('SIGTERM', stop);
+    process.once('SIGINT', stop);
+  }
 
+  running = true;
+  activePromise = _runLoop().finally(() => {
+    activePromise = null;
+  });
+  return activePromise;
+}
+
+async function _runLoop() {
   while (running) {
     try {
       const taskStr = await CacheManager.dequeue(QUEUE_KEY);
@@ -56,8 +76,8 @@ export async function startWorker() {
         const resultData = await handler(task.payload, task);
         await _writeResult(task.id, task.tenantId, { status: 'success', data: resultData });
       } catch (err) {
-        console.error(`[Worker] 监听任务错误 ${task.id}:`, err.message);
-        console.error(`[Worker] 错误堆栈:`, err.stack);
+        // console.error(`[Worker] 监听任务错误 ${task.id}:`, err.message);
+        // console.error(`[Worker] 错误堆栈:`, err.stack);
         await _writeResult(task.id, task.tenantId, { status: 'failed', error: { message: err.message } });
       }
     } catch (err) {
@@ -66,19 +86,17 @@ export async function startWorker() {
     }
   }
 
-  console.log('[Worker] 已停止');
+  // 静默退出，避免 jest 把退出日志当成 "after tests are done" 警告
 }
 
 // 将处理结果写入 Redis，并通过 WebSocket 推送给前端
 async function _writeResult(taskId, tenantId, result) {
-  // 防御：确保 result 是对象，防止 ...result 展开报错
   if (!result || typeof result !== 'object') {
     result = { status: 'failed', error: { message: 'Handler returned invalid result' } };
   }
   result.processedAt = new Date().toISOString();
   try {
     await CacheManager.set(`task:result:${taskId}`, JSON.stringify(result), RESULT_TTL);
-    // tenantId=0 是有效值（系统管理员），只过滤 undefined/null
     if (tenantId !== undefined && tenantId !== null) {
       RealtimePusher.pushTaskResult(tenantId, taskId, result);
     }

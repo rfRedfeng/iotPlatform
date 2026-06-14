@@ -1,63 +1,63 @@
-import ws from '@tdengine/websocket';
 import { tdengine } from '../../config/database.js';
 
 class TdDengineManger {
   constructor() {
-    this.pool = [];
-    this.activeConnections = 0;
-    this.poolSize = 5; // 连接池大小
-    this.maxConnections = 10; // 最大连接数
-    this.url = `ws://${tdengine.user}:${tdengine.password}@${tdengine.host}:${tdengine.port}`;
+    this.host = tdengine.host;
+    this.port = tdengine.port;
+    this.user = tdengine.user;
+    this.password = tdengine.password;
     this.database = tdengine.database;
+    this.baseUrl = `http://${this.host}:${this.port}/rest/sql`;
+    this.authHeader = 'Basic ' + Buffer.from(`${this.user}:${this.password}`).toString('base64');
   }
 
-  // 等待空闲连接
-  waitForConnection() {
-    return new Promise((resolve) => {
-      const interval = setInterval(() => {
-        if (this.pool.length > 0) {
-          clearInterval(interval);
-          resolve(this.pool.pop());
-        }
-      }, 100);
+  /**
+   * 执行 SQL，返回 TDengine REST 响应体：
+   *   { code, column_meta, data, rows }
+   * 数据库通过 URL path 传递（/rest/sql/<db>），无需 USE 切换。
+   */
+  async execute(sql) {
+    const url = `${this.baseUrl}/${this.database}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': this.authHeader,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: sql,
     });
+    const text = await res.text();
+    let json;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch (e) {
+      throw new Error(`TDengine 返回非 JSON (status=${res.status}, body=${text.slice(0, 200)})`);
+    }
+    if (!json || json.code !== 0) {
+      const err = new Error(`TDengine SQL 失败: ${json?.desc ?? 'empty response'}`);
+      err.code = json?.code;
+      err.sql = sql;
+      throw err;
+    }
+    // 返回完整响应 { column_meta, data, rows }，由 TimeSeriesRepo 把 data 数组按 column_meta 拼成对象
+    return json;
   }
 
-  // 获取连接（从池中获取或创建新连接）
+  // 兼容旧接口：TimeSeriesRepo 仍以 conn.execute 调用，conn = this
   async getPool() {
-    if (this.pool.length > 0) {
-      return this.pool.pop();
-    }
-    if (this.activeConnections < this.maxConnections) {
-      const conn = await ws.connect(this.url);
-      await conn.execute(`USE ${this.database}`);
-      this.activeConnections++;
-      return conn;
-    }
-    return this.waitForConnection();
+    return this;
   }
-
-  // 归还连接到池中
-  putPool(conn) {
-    this.pool.push(conn);
+  putPool() {
+    // no-op（REST 无连接可还）
   }
-
-  // 初始化连接池
-  async initPool(poolSize = 5) {
-    for (let i = 0; i < poolSize; i++) {
-      const conn = await ws.connect(this.url);
-      await conn.execute(`USE ${this.database}`);
-      this.putPool(conn);
-      this.activeConnections++;
-    }
+  async close() {
+    // no-op
   }
-
+  async initPool() {
+    // no-op
+  }
   async getPoolStatus() {
-    return {
-      availableConnections: this.pool.length,
-      activeConnections: this.activeConnections,
-      maxConnections: this.maxConnections,
-    };
+    return { availableConnections: 0, activeConnections: 0, maxConnections: 0 };
   }
 }
 

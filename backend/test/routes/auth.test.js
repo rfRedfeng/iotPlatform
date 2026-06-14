@@ -4,7 +4,7 @@
  */
 import { jest, describe, test, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 import request from 'supertest';
-import { app, server } from '../test-server.js';
+import { app, server, closeWorker } from '../test-server.js';
 import { adminToken, userToken } from '../helpers/auth.js';
 import { clearRedisQueue } from '../setup.js';
 import { cleanupTables, seedTenant, seedAdmin, closePool } from '../helpers/seed.js';
@@ -165,4 +165,10 @@ describe('POST /api/auth/register（异步）', () => {
     expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);
   });
+});
+
+// 文件级清理
+afterAll(async () => {
+  await clearRedisQueue();
+  await closeWorker();
 });
