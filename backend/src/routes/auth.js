@@ -8,7 +8,7 @@
 
 import express from 'express';
 import crypto from 'crypto';
-import { login, refreshAccessToken } from '../services/AuthService.js';
+import { login, refreshAccessToken, logout as logoutUser } from '../services/AuthService.js';
 import { getById as getTenantById } from '../services/TenantService.js';
 import UserRepository from '../data-access/mysql/repositories/UserRepository.js';
 import CacheManager from '../data-access/redis/CacheManager.js';
@@ -90,7 +90,8 @@ router.post('/refresh', async (req, res, next) => {
     const result = await refreshAccessToken(refreshToken);
     res.json({ success: true, data: result });
   } catch (err) {
-    if (err.message.includes('Invalid') || err.message.includes('not found')) {
+    // C-1: 过期/无效/不存在 都映射到 401
+    if (err.message.includes('Invalid') || err.message.includes('not found') || err.message.includes('expired')) {
       return res.status(401).json({ success: false, error: { code: 401, message: err.message } });
     }
     next(err);
@@ -114,6 +115,21 @@ router.get('/userinfo', authMiddleware, async (req, res, next) => {
     const tenant = await getTenantById(req.user.tenantId);
 
     res.json({ success: true, data: { user: safeUser, tenant } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/auth/logout (C-1)
+ * 真登出：删除该用户的所有 refreshToken 行，让所有设备的登录态都失效
+ * 前端应传 accessToken（用于鉴权），并可选地传 refreshToken 以便精准删除
+ * 需要 Bearer token
+ */
+router.post('/logout', authMiddleware, async (req, res, next) => {
+  try {
+    const result = await logoutUser(req.user.userId, req.body?.refreshToken);
+    res.json({ success: true, data: result });
   } catch (err) {
     next(err);
   }

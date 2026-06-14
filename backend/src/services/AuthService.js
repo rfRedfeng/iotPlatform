@@ -95,14 +95,30 @@ export async function verifyRefreshToken(refreshToken) {
     if (!refreshToken) return null;
     const payload = verifyToken(refreshToken);
     if (!payload) return null;
+    // ★ C-1 修复:必须校验 DB 中的 expiresAt,而不仅仅看 JWT 自身 exp
+    // 原因:用户登出后如果 JWT 仍在 7 天有效期内,DB 行被删则本检查为 false
     const stored = await RefreshTokenRepository.findByToken(refreshToken);
     if (!stored) return null;
+    if (!_isRefreshTokenLive(stored)) return null;
     return {
         userId: payload.userId,
         username: payload.username,
         role: payload.role,
         tenantId: payload.tenantId,
     };
+}
+
+/**
+ * 校验 refreshToken 记录是否还在有效期内
+ * @param {object} stored 来自 findByToken 的行 (camelCase,expiresAt 字段)
+ * @returns {boolean}
+ */
+function _isRefreshTokenLive(stored) {
+    if (!stored || !stored.expiresAt) return false;
+    const exp = stored.expiresAt instanceof Date
+        ? stored.expiresAt.getTime()
+        : new Date(stored.expiresAt).getTime();
+    return Number.isFinite(exp) && exp > Date.now();
 }
 
 /**
@@ -116,10 +132,15 @@ export async function refreshAccessToken(refreshToken) {
     throw new Error('Invalid or expired refresh token');
   }
 
-  // 检查数据库中是否存在
+  // 检查数据库中是否存在 + 未过期 (C-1)
   const stored = await RefreshTokenRepository.findByToken(refreshToken);
   if (!stored) {
     throw new Error('Refresh token not found');
+  }
+  if (!_isRefreshTokenLive(stored)) {
+    // 顺手清掉过期行,避免残留
+    await RefreshTokenRepository.deleteByToken(refreshToken);
+    throw new Error('Refresh token expired');
   }
 
   // 计算 refreshToken 剩余有效期（秒）
@@ -168,6 +189,23 @@ export async function refreshAccessToken(refreshToken) {
 // ========== Worker 任务处理器（自动注册）==========
 
 registerHandler('auth.register', registerUser);
+
+// ========== 登出 (C-1) ==========
+
+/**
+ * 退出登录：删除该用户的所有 refreshToken，让所有设备重新登录
+ * @param {number} userId
+ * @param {string} [refreshToken] 可选 - 如果传了就只删这一条（精准登出当前会话）
+ * @returns {Promise<{deleted: number}>}
+ */
+export async function logout(userId, refreshToken) {
+  if (refreshToken) {
+    const ok = await RefreshTokenRepository.deleteByToken(refreshToken);
+    return { deleted: ok ? 1 : 0 };
+  }
+  const n = await RefreshTokenRepository.deleteAllForUser(userId);
+  return { deleted: n };
+}
 
 // ========== 生成随机设备密钥 ==========
 

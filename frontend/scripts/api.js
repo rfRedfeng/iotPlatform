@@ -144,6 +144,10 @@ export const api = {
     login: (username, password) =>
         request('/auth/login', { method: 'POST', body: { username, password } }),
     userInfo: () => request('/auth/userinfo'),
+    logout: (refreshToken) => request('/auth/logout', {
+        method: 'POST',
+        body: refreshToken ? { refreshToken } : {},
+    }),
 
     // 设备
     listDevices: (params) => {

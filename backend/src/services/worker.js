@@ -5,12 +5,15 @@
  */
 
 import CacheManager from '../data-access/redis/CacheManager.js';
+import RefreshTokenRepository from '../data-access/mysql/repositories/RefreshTokenRepository.js';
 import RealtimePusher from '../data-processing/RealtimePusher.js';
 import { getHandler } from './handlerRegistry.js';
 
 const QUEUE_KEY = 'task:queue';
 const RESULT_TTL = 300; // 5min 结果过期时间
 const POLL_INTERVAL_MS = 100; // 100ms 轮询一次
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5min 清理一次过期 refreshToken
+const CLEANUP_EVERY_N_LOOPS = 100; // 兜底：每 100 个空轮询也触发一次
 
 // 进行任务处理的主循环
 let running = true;
@@ -47,13 +50,29 @@ export async function startWorker() {
 }
 
 async function _runLoop() {
+  let emptyLoops = 0;
+  let lastCleanup = Date.now();
   while (running) {
     try {
       const taskStr = await CacheManager.dequeue(QUEUE_KEY);
       if (!taskStr) {
+        emptyLoops++;
+        // C-1: 周期性清理过期 refreshToken (按时间 + 按空轮询次数兜底)
+        const now = Date.now();
+        if (now - lastCleanup > CLEANUP_INTERVAL_MS || emptyLoops >= CLEANUP_EVERY_N_LOOPS) {
+          lastCleanup = now;
+          emptyLoops = 0;
+          try {
+            const n = await RefreshTokenRepository.deleteExpired();
+            if (n > 0) console.log(`[Worker] cleanup: deleted ${n} expired refreshToken(s)`);
+          } catch (e) {
+            console.warn('[Worker] refreshToken cleanup failed:', e.message);
+          }
+        }
         await sleep(POLL_INTERVAL_MS);
         continue;
       }
+      emptyLoops = 0;
 
       let task;
       try {

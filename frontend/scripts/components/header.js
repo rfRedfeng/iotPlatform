@@ -126,7 +126,15 @@ function textFor(status) {
     return '实时已断开';
 }
 
-function handleLogout() {
+async function handleLogout() {
+    // C-1: 先调后端 /auth/logout 删除 refreshToken 行,再清本地 state
+    const refreshToken = storage.get('refreshToken');
+    try {
+        await api.logout(refreshToken || undefined);
+    } catch (e) {
+        // 后端失败也继续清理前端,避免用户卡在死循环
+        console.warn('[logout] backend logout failed, clearing client state anyway:', e.message);
+    }
     setState({ user: null, accessToken: null, refreshToken: null, selectedTenantId: null });
     storage.remove('accessToken');
     storage.remove('refreshToken');
