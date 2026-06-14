@@ -42,23 +42,6 @@ class TdDengineManger {
     // 返回完整响应 { column_meta, data, rows }，由 TimeSeriesRepo 把 data 数组按 column_meta 拼成对象
     return json;
   }
-
-  // 兼容旧接口：TimeSeriesRepo 仍以 conn.execute 调用，conn = this
-  async getPool() {
-    return this;
-  }
-  putPool() {
-    // no-op（REST 无连接可还）
-  }
-  async close() {
-    // no-op
-  }
-  async initPool() {
-    // no-op
-  }
-  async getPoolStatus() {
-    return { availableConnections: 0, activeConnections: 0, maxConnections: 0 };
-  }
 }
 
 export default new TdDengineManger();

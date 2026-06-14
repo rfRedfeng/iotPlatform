@@ -3,6 +3,7 @@ import TimeSeriesRepo from '../../data-access/tdengine/TimeSeriesRepo.js';
 class DataIngestor {
   // 摄入设备数据到 TDengine
   async ingest(deviceId, tenantId, areaId, deviceType, metrics) {
+    // S-4: metrics 已经是 JS 对象,TimeSeriesRepo 负责 JSON.stringify + 转义
     // 将数据写入时序数据库
     let res = await TimeSeriesRepo.insertDeviceDataPoint(
       deviceId,

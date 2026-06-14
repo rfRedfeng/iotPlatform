@@ -170,6 +170,64 @@ describe('PUT /api/devices/:id（异步）', () => {
   });
 });
 
+// ============================================================
+// C-2: TDengine 注入拦截 (路由层)
+// ============================================================
+describe('C-2: GET /api/devices/:id/history 注入拦截', () => {
+  let deviceId;
+
+  beforeAll(async () => {
+    await new Promise(resolve => server.listen(TEST_PORT, resolve));
+    await cleanupTables();
+    await seedTenant();
+    deviceId = await seedDevice(1);
+  });
+
+  afterAll(async () => {
+    server.close();
+    await closePool();
+  });
+
+  test('startTime 含 SQL 注入 → 400', async () => {
+    const res = await request(app)
+      .get(`/api/devices/${deviceId}/history?startTime=2024-01-01'%3B%20DROP%20TABLE%20d1%3B--&endTime=2024-12-31T23:59:59Z`)
+      .set('Authorization', `Bearer ${adminToken()}`);
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/Invalid startTime|ISO 8601/);
+  });
+
+  test('endTime 不是 ISO 8601 → 400', async () => {
+    const res = await request(app)
+      .get(`/api/devices/${deviceId}/history?startTime=2024-01-01T00:00:00Z&endTime=not-a-date`)
+      .set('Authorization', `Bearer ${adminToken()}`);
+    expect(res.status).toBe(400);
+  });
+
+  test('endTime 在未来 → 400', async () => {
+    const res = await request(app)
+      .get(`/api/devices/${deviceId}/history?startTime=2020-01-01T00:00:00Z&endTime=2099-01-01T00:00:00Z`)
+      .set('Authorization', `Bearer ${adminToken()}`);
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/future/);
+  });
+
+  test('时间跨度 > 30 天 → 400', async () => {
+    const res = await request(app)
+      .get(`/api/devices/${deviceId}/history?startTime=2020-01-01T00:00:00Z&endTime=2020-06-01T00:00:00Z`)
+      .set('Authorization', `Bearer ${adminToken()}`);
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/30 days/);
+  });
+
+  test('endTime <= startTime → 400', async () => {
+    const res = await request(app)
+      .get(`/api/devices/${deviceId}/history?startTime=2024-06-01T00:00:00Z&endTime=2024-01-01T00:00:00Z`)
+      .set('Authorization', `Bearer ${adminToken()}`);
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/after/);
+  });
+});
+
 describe('DELETE /api/devices/:id（异步）', () => {
   let deviceId;
 

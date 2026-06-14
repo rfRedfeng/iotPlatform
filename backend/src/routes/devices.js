@@ -12,6 +12,7 @@ import express from 'express';
 import crypto from 'crypto';
 import { list, getById, getDeviceData, getDeviceHistory } from '../services/DeviceService.js';
 import CacheManager from '../data-access/redis/CacheManager.js';
+import { assertIntegerId, assertIsoTimestamp } from '../utils/sqlSanitizer.js';
 
 const router = express.Router();
 
@@ -72,6 +73,12 @@ router.get('/:id/data', async (req, res, next) => {
 /**
  * GET /api/devices/:id/history
  * 设备历史数据（同步）
+ *
+ * 安全防护 (C-2 + I-4 + I-11):
+ * - startTime/endTime 必须合法 ISO 8601
+ * - endTime <= now() 且 endTime > startTime
+ * - 时间跨度 <= 30 天 (防拉全表)
+ * - 上述校验在路由层先做一次,service/Repo 层会再做一次 (纵深防御)
  */
 router.get('/:id/history', async (req, res, next) => {
   try {
@@ -79,15 +86,36 @@ router.get('/:id/history', async (req, res, next) => {
     if (!startTime || !endTime) {
       return res.status(400).json({ success: false, error: { code: 400, message: 'startTime and endTime are required' } });
     }
+    // 白名单校验 - 必须在传进 service 之前拒掉
+    assertIntegerId(req.params.id, 'id');
+    const _start = assertIsoTimestamp(startTime, 'startTime');
+    const _end = assertIsoTimestamp(endTime, 'endTime');
+    const startMs = new Date(_start).getTime();
+    const endMs = new Date(_end).getTime();
+    if (endMs <= startMs) {
+      return res.status(400).json({ success: false, error: { code: 400, message: 'endTime must be after startTime' } });
+    }
+    if (endMs > Date.now()) {
+      return res.status(400).json({ success: false, error: { code: 400, message: 'endTime cannot be in the future' } });
+    }
+    const MAX_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+    if (endMs - startMs > MAX_WINDOW_MS) {
+      return res.status(400).json({ success: false, error: { code: 400, message: 'time window cannot exceed 30 days' } });
+    }
+
     const data = await getDeviceHistory(
       parseInt(req.params.id),
       req.tenantId,
-      startTime,
-      endTime,
+      _start,
+      _end,
       { page: parseInt(page), pageSize: parseInt(pageSize) }
     );
     res.json({ success: true, data });
   } catch (err) {
+    if (err.statusCode) {
+      // AppError → 直接返回
+      return res.status(err.statusCode).json({ success: false, error: { code: err.statusCode, message: err.message } });
+    }
     if (err.message === 'Device not found') {
       return res.status(404).json({ success: false, error: { code: 404, message: err.message } });
     }
