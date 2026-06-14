@@ -28,7 +28,7 @@ export const storage = {
         }
     },
     remove(key) {
-        try { localStorage.removeItem(key); } catch {}
+        try { localStorage.removeItem(key); } catch { }
         _memoryFallback.delete(key);
     },
     getJSON(key) {
@@ -37,7 +37,7 @@ export const storage = {
         try { return JSON.parse(raw); } catch { return null; }
     },
     setJSON(key, value) {
-        try { this.set(key, JSON.stringify(value)); } catch {}
+        try { this.set(key, JSON.stringify(value)); } catch { }
     },
 };
 
@@ -93,5 +93,5 @@ export function formatDate(iso) {
     if (isNaN(d.getTime())) return iso;
     const pad = (n) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
-           `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }

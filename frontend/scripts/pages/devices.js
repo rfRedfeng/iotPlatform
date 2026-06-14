@@ -7,10 +7,12 @@ import { api } from '../api.js';
 import { go } from '../router.js';
 import { on as onWs } from '../ws.js';
 import { mountHeader } from '../components/header.js';
+import { navigation } from '../components/navigation.js';
 import { openModal } from '../components/modal.js';
 
 export function render(root) {
     const header = mountHeader();
+    const nav = navigation();
 
     const tableContainer = h('div', { id: 'devices-table' });
 
@@ -42,7 +44,10 @@ export function render(root) {
     ]);
 
     root.appendChild(header.element);
-    root.appendChild(main);
+    const layout = h('div', { class: 'home-text' });
+    root.appendChild(layout);
+    layout.appendChild(nav);
+    layout.appendChild(main);
 
     // ────────── 事件 ──────────
     main.querySelector('#refresh-btn').addEventListener('click', () => loadDevices());
@@ -61,10 +66,10 @@ export function render(root) {
     // ────────── WS 监听 task_result ──────────
     // 后端异步队列处理完 device.create 后会推 { type: 'task_result', status: 'success', data: {...} }
     const offWs = onWs('task_result', (msg) => {
-        if (msg.status === 'success' && (
-            msg.type === 'device.create' ||
-            msg.type === 'device.update' ||
-            msg.type === 'device.delete'
+        if (msg.status === 'success' && msg.data && (
+            msg.data.type === 'device.create' ||
+            msg.data.type === 'device.update' ||
+            msg.data.type === 'device.delete'
         )) {
             console.log('[devices] task_result received, reloading');
             loadDevices();

@@ -156,7 +156,7 @@ async function seedData(conn) {
   const adminPasswordHash = await bcrypt.hash('admin123', BCRYPT_ROUNDS);
   await conn.query(`
     INSERT IGNORE INTO users (tenant_id, username, password_hash, role, email)
-    VALUES (1, 'admin', ?, 'admin', 'admin@iot.local')
+    VALUES (0, 'admin', ?, 'admin', 'admin@iot.local')
   `, [adminPasswordHash]);
 
   // 创建租户内管理员

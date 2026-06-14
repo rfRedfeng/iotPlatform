@@ -17,15 +17,22 @@
 //     - 后端可在 upgrade handler 里从 req.url 解析
 //     - 也兼容在 open 后第一条消息发 auth（保留作为冗余）
 //
+// 鉴权失败处理（重要）：
+//   - 后端 upgrade 401 → 浏览器收到 close 事件,code=1006,没有 open 事件
+//   - 检测到「未 open 就 close」= 鉴权失败
+//   - 清 state + 清 storage + 跳 /login（不再死循环重试）
+//
 // 后端约定（来自 backend/src/data-processing/RealtimePusher.js）：
 //   - URL: ws://${host}/  + ?refreshToken=xxx
 //   - 推送消息格式: { type: 'device_data' | 'device_status' | 'alert' | 'task_result', ... }
 
 import { getState, setState } from './state.js';
+import { storage } from './utils.js';
 
 let ws = null;
 let reconnectTimer = null;
 let manuallyClosed = false;   // 区分"用户主动断开"和"网络断线"
+let opened = false;           // 当前连接是否成功过 open 事件（用于鉴权失败检测）
 const listeners = new Map();   // type -> Set<fn>
 
 /**
@@ -35,9 +42,32 @@ const listeners = new Map();   // type -> Set<fn>
 function buildUrl() {
     const rt = getState().refreshToken;
     if (!rt) return null;
-    // URL 编码避免特殊字符破坏 query
     const encoded = encodeURIComponent(rt);
     return `ws://${location.host}/?refreshToken=${encoded}`;
+}
+
+/**
+ * 鉴权失败: 清状态 + 清 storage + 跳登录 + 阻止重连
+ */
+function handleAuthFailure() {
+    if (manuallyClosed) return;  // 已经在登出流程
+    console.warn('[ws] 鉴权失败,清登录态跳 /login');
+    manuallyClosed = true;        // 阻止后续重连
+    if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+    }
+    if (ws) {
+        try { ws.close(); } catch {}
+        ws = null;
+    }
+    setState({ wsStatus: 'disconnected' });
+    setState({ user: null, accessToken: null, refreshToken: null });
+    storage.remove('accessToken');
+    storage.remove('refreshToken');
+    if (location.hash !== '#/login') {
+        location.hash = '#/login';
+    }
 }
 
 /**
@@ -56,6 +86,7 @@ export function connect() {
     }
 
     manuallyClosed = false;
+    opened = false;
     setState({ wsStatus: 'connecting' });
     console.log('[ws] connecting (refreshToken auth)');
 
@@ -63,16 +94,16 @@ export function connect() {
         ws = new WebSocket(url);
     } catch (e) {
         console.error('[ws] new WebSocket 失败', e);
-        scheduleReconnect();
+        handleAuthFailure();
         return;
     }
 
     ws.addEventListener('open', () => {
+        opened = true;
         console.log('[ws] open');
         setState({ wsStatus: 'connected' });
 
         // 冗余:有些后端实现不读 URL query,需要第一条消息鉴权
-        // 保留这个发送,后端按需支持
         try {
             const rt = getState().refreshToken;
             if (rt && ws.readyState === WebSocket.OPEN) {
@@ -85,7 +116,6 @@ export function connect() {
         let msg;
         try { msg = JSON.parse(e.data); } catch { return; }
         if (!msg || typeof msg !== 'object' || !msg.type) return;
-        // 忽略后端对 auth 的回执
         if (msg.type === 'auth_result') return;
         const set = listeners.get(msg.type);
         if (set) {
@@ -97,8 +127,15 @@ export function connect() {
 
     ws.addEventListener('close', (e) => {
         console.log('[ws] close', e.code, e.reason);
+        const wasOpened = opened;
         ws = null;
         setState({ wsStatus: 'disconnected' });
+
+        // 鉴权失败检测:从未 open 就 close(close.code=1006 表示 upgrade 失败)
+        if (!wasOpened && !manuallyClosed) {
+            handleAuthFailure();
+            return;
+        }
         if (!manuallyClosed) scheduleReconnect();
     });
 
@@ -136,9 +173,6 @@ function scheduleReconnect() {
 
 /**
  * 订阅某类消息。
- * @param {string} type 例如 'task_result' / 'device_data' / 'alert'
- * @param {(msg: object) => void} fn
- * @returns {() => void} unsubscribe
  */
 export function on(type, fn) {
     if (!listeners.has(type)) listeners.set(type, new Set());

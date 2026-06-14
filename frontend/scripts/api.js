@@ -6,6 +6,23 @@ import { storage } from './utils.js';
 const BASE = '/api';
 let refreshing = null;
 
+/**
+ * 鉴权失败:清状态 + 清 storage + 跳 /login
+ * 被 401/refresh 失败/404 self-lookup 三种情况调用
+ */
+function handleAuthFailure(reason) {
+    if (getState().accessToken === null && getState().refreshToken === null) {
+        return;  // 已经清空过,不重复
+    }
+    console.warn('[auth] 鉴权失效:', reason);
+    setState({ user: null, accessToken: null, refreshToken: null });
+    storage.remove('accessToken');
+    storage.remove('refreshToken');
+    if (location.hash !== '#/login') {
+        location.hash = '#/login';
+    }
+}
+
 async function request(path, opts = {}) {
     const headers = {
         'Content-Type': 'application/json',
@@ -38,11 +55,16 @@ async function request(path, opts = {}) {
         if (refreshed) {
             return request(path, { ...opts, _retried: true });
         }
-        setState({ user: null, accessToken: null, refreshToken: null });
-        storage.remove('accessToken');
-        storage.remove('refreshToken');
-        location.hash = '#/login';
+        handleAuthFailure('401 + refresh 失败');
         const err = new Error('AUTH_FAILED');
+        err.code = 'HTTP_4XX';
+        throw err;
+    }
+
+    // 404 on /auth/userinfo = 用户被删了(token 还在 DB 但 user 没了)
+    if (res.status === 404 && path === '/auth/userinfo') {
+        handleAuthFailure('用户不存在,token 已失效');
+        const err = new Error('USER_NOT_FOUND');
         err.code = 'HTTP_4XX';
         throw err;
     }
@@ -67,7 +89,7 @@ async function parseError(res, fallback) {
     try {
         const env = await res.json();
         if (env?.error?.message) message = env.error.message;
-    } catch {}
+    } catch { }
     const err = new Error(message);
     err.code = res.status >= 500 ? 'HTTP_5XX' : 'HTTP_4XX';
     throw err;
@@ -112,6 +134,7 @@ export const api = {
     // 认证
     login: (username, password) =>
         request('/auth/login', { method: 'POST', body: { username, password } }),
+    userInfo: () => request('/auth/userinfo'),
 
     // 设备
     listDevices: (params) => {
@@ -124,8 +147,16 @@ export const api = {
     updateDevice: (id, payload) => request('/devices/' + encodeURIComponent(id), { method: 'PUT', body: payload }),
     deleteDevice: (id) => request('/devices/' + encodeURIComponent(id), { method: 'DELETE' }),
 
+    // 用户
+    listUsers: () => request('/users'),
+    updateUser: (id, payload) => request('/users/' + encodeURIComponent(id), { method: 'PUT', body: payload }),
+    deleteUser: (id) => request('/users/' + encodeURIComponent(id), { method: 'DELETE' }),
+
     // 仪表盘
-    getDashboardSummary: () => request('/dashboard/summary'),
+    getDashboardSummary: (areaId) => {
+        const qs = areaId ? '?areaId=' + areaId : '';
+        return request('/dashboard/summary' + qs);
+    },
     // 后端要 deviceId, metric, startTime, endTime; 缺一返 400
     getDashboardTrends: (deviceId, metric, startTime, endTime, interval = '1h') => {
         const qs = new URLSearchParams({
@@ -137,4 +168,11 @@ export const api = {
         });
         return request('/dashboard/trends?' + qs.toString());
     },
+
+    // 区域
+    listAreas: (tree = true) => request('/areas' + (tree ? '?tree=true' : '')),
+    getArea: (id) => request('/areas/' + encodeURIComponent(id)),
+    createArea: (payload) => request('/areas', { method: 'POST', body: payload }),
+    updateArea: (id, payload) => request('/areas/' + encodeURIComponent(id), { method: 'PUT', body: payload }),
+    deleteArea: (id) => request('/areas/' + encodeURIComponent(id), { method: 'DELETE' }),
 };

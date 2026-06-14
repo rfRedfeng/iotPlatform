@@ -15,6 +15,7 @@ import { render as renderLogin } from './pages/login.js';
 import { render as renderDevices } from './pages/devices.js';
 import { render as renderDeviceDetail } from './pages/device-detail.js';
 import { render as renderDashboard } from './pages/dashboard.js';
+import { render as renderUsers } from './pages/users.js';
 
 console.log('[I8] boot');
 
@@ -33,6 +34,7 @@ route('/login', renderLogin);
 route('/', renderHome);
 route('/devices', renderDevices);
 route('/devices/:id', renderDeviceDetail);
+route('/users', renderUsers);
 route('/dashboard', renderDashboard);
 
 // 3) 启动

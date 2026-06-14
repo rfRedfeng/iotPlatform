@@ -6,11 +6,13 @@ import { api } from '../api.js';
 import { go } from '../router.js';
 import { on as onWs } from '../ws.js';
 import { mountHeader } from '../components/header.js';
+import { navigation } from '../components/navigation.js';
 import { renderChart, appendPoint, destroyChart } from '../components/data-chart.js';
 
 export function render(root, params) {
     const deviceId = params.id;
     const header = mountHeader();
+    const nav = navigation();
 
     const infoContainer = h('div', { id: 'device-info' });
     const chartWrapper = h('div', { id: 'device-chart-wrapper', style: { height: '300px', position: 'relative', marginTop: '1rem' } });
@@ -33,7 +35,10 @@ export function render(root, params) {
     ]);
 
     root.appendChild(header.element);
-    root.appendChild(main);
+    const layout = h('div', { class: 'home-text' });
+    root.appendChild(layout);
+    layout.appendChild(nav);
+    layout.appendChild(main);
 
     main.querySelector('#back-btn').addEventListener('click', () => go('/devices'));
 

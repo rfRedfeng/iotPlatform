@@ -1,26 +1,15 @@
 /* IoT Cloud Platform - Main Styles
-   I4 重建,基础排版 + Header + 容器
+   I4 重建 + 导航栏优化
 */
 
 /* ────────── reset ────────── */
 * { margin: 0; padding: 0; box-sizing: border-box; }
-
-/* ────────── 基础排版 ────────── */
-body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-                 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
-    line-height: 1.6;
-    color: #333;
-    background-color: #f5f5f5;
-    min-height: 100vh;
-}
 
 a { color: #3498db; text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 h1, h2, h3, h4 { color: #2c3e50; margin-bottom: 0.5rem; }
 p { margin-bottom: 0.75rem; }
-ul, ol { margin-left: 1.5rem; margin-bottom: 0.75rem; }
 
 button {
     background: #3498db;
@@ -41,10 +30,20 @@ input, select, textarea {
     border-radius: 4px;
 }
 
+/* ────────── 基础排版（不重置 ul/ol,导航栏需要无 list-style）────────── */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    line-height: 1.6;
+    color: #333;
+    background-color: #f5f5f5;
+    min-height: 100vh;
+}
+
 /* ────────── 挂载点 ────────── */
 #app { min-height: 100vh; display: flex; flex-direction: column; }
 
-/* ────────── Header（受保护页面统一用）────────── */
+/* ────────── Header ────────── */
 .header {
     background-color: #2c3e50;
     color: white;
@@ -62,13 +61,85 @@ input, select, textarea {
 }
 .header button:hover:not(:disabled) { background: #c0392b; }
 
+/* ────────── 受保护页主体（导航 + 内容 横排）────────── */
+.home-text {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    background: #f5f5f5;   /* 浅灰,让白色 nav 浮起来 */
+}
+
+/* ────────── 侧边导航栏（白底,与深色 Header 区分）────────── */
+.nav {
+    background-color: #ffffff;
+    border-right: 1px solid #e0e0e0;
+    padding: 1.5rem 0.75rem;
+    min-width: 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    box-shadow: 2px 0 6px rgba(0,0,0,0.04);
+}
+
+.nav ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.nav li {
+    list-style: none;
+    display: block;
+    padding: 0.7rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s, color 0.2s;
+    color: #2c3e50;   /* 默认深色文字 */
+}
+
+/* 鼠标悬停：浅蓝底 + 微右移 */
+.nav li:hover {
+    background-color: #ecf0f1;
+    transform: translateX(2px);
+}
+
+/* 当前页：蓝色高亮 */
+.nav li.active {
+    background-color: #3498db;
+    color: white;
+}
+.nav li.active a {
+    color: white;
+    font-weight: 600;
+}
+
+.nav li a {
+    color: #2c3e50;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    width: 100%;
+}
+.nav li a:hover { text-decoration: none; }
+
+.nav li a .icon {
+    font-size: 1.1rem;
+    width: 1.4rem;
+    text-align: center;
+}
+.nav li a .label {
+    flex: 1;
+}
+
 /* ────────── 主内容区 ────────── */
 .main {
     flex: 1;
     padding: 2rem;
-    max-width: 1200px;
-    width: 100%;
-    margin: 0 auto;
+    min-width: 0;
 }
 
 #page-content {

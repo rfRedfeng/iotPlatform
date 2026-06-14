@@ -15,7 +15,8 @@ const router = express.Router();
  */
 router.get('/summary', async (req, res, next) => {
   try {
-    const result = await getSummary(req.tenantId);
+    const { areaId } = req.query;
+    const result = await getSummary(req.tenantId, areaId ? parseInt(areaId) : null);
     res.json({ success: true, data: result });
   } catch (err) {
     next(err);

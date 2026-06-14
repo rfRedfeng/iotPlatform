@@ -7,7 +7,7 @@
 import CacheManager from '../data-access/redis/CacheManager.js';
 
 const WINDOW_SECONDS = 60;
-const MAX_REQUESTS = 100;
+const MAX_REQUESTS = 300;
 const KEY_PREFIX = 'ratelimit:';
 
 // Lua 脚本：原子化执行滑动窗口限流检查 + 计数
@@ -84,7 +84,7 @@ async function _checkAndIncrement(key) {
   const client = await CacheManager.getClient();
   const result = await client.eval(RATE_LIMIT_SCRIPT, {
     keys: [key],
-    arguments: [now, windowStart, WINDOW_SECONDS, MAX_REQUESTS]
+    arguments: [String(now), String(windowStart), String(WINDOW_SECONDS), String(MAX_REQUESTS)]
   });
 
   return {

@@ -20,7 +20,6 @@ export function render(root) {
         root.replaceChildren(
             h('header', { class: 'header' }, [
                 h('h1', {}, 'IoT Cloud Platform'),
-                h('p', { style: { margin: '0', opacity: '0.7', fontSize: '0.9rem' } }, '登录'),
             ]),
             h('main', { class: 'main' }, [
                 h('div', { id: 'page-content', style: { maxWidth: '400px', margin: '2rem auto' } }, [
@@ -55,11 +54,6 @@ export function render(root) {
                         }, loading ? '登录中...' : '登录'),
                     ]),
                     error ? h('p', { style: { color: '#e74c3c', marginTop: '1rem' } }, error) : null,
-                    h('p', { style: { marginTop: '1.5rem', color: '#7f8c8d', fontSize: '0.9rem', lineHeight: '1.5' } }, [
-                        '提示：使用后端 users 表里的测试账号登录。',
-                        h('br'),
-                        'I3 验收：成功后 localStorage 会有 accessToken，刷新页面仍保持登录。',
-                    ]),
                 ]),
             ]),
         );

@@ -37,6 +37,12 @@ export async function list(tenantId, { page = 1, pageSize = 20 } = {}) {
   return await UserRepository.findAllByTenantId(tenantId, { page, pageSize });
 }
 
+// 系统管理员专用:跨租户列出所有用户
+export async function listAll({ page = 1, pageSize = 100 } = {}) {
+  return await UserRepository.findAll({ page, pageSize });
+}
+
+
 // ========== 写入 ==========
 
 async function _invalidateCache(userId) {

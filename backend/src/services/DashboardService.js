@@ -12,11 +12,18 @@ import TimeSeriesRepo from '../data-access/tdengine/TimeSeriesRepo.js';
 
 /**
  * 获取仪表盘摘要
- * @returns {Promise<{totalDevices, onlineDevices, offlineDevices, todayAlerts, unacknowledgedAlerts}>}
+ * @param {number} tenantId
+ * @param {number|null} areaId 区域过滤(null = 全部区域)
+ * @returns {Promise<{totalDevices, onlineDevices, offlineDevices, todayAlerts, unacknowledgedAlerts, areaId, lastUpdated}>}
  */
-export async function getSummary(tenantId) {
-  // 设备统计
-  const allDevices = await DeviceRepository.findByTenantId(tenantId, { page: 1, pageSize: 10000 });
+export async function getSummary(tenantId, areaId = null) {
+  // 设备统计（按区域过滤）
+  let allDevices;
+  if (areaId) {
+      allDevices = await DeviceRepository.findByAreaId(tenantId, areaId, { page: 1, pageSize: 10000 });
+  } else {
+      allDevices = await DeviceRepository.findByTenantId(tenantId, { page: 1, pageSize: 10000 });
+  }
   const totalDevices = allDevices?.length || 0;
 
   let onlineDevices = 0;
@@ -44,6 +51,7 @@ export async function getSummary(tenantId) {
     offlineDevices,
     todayAlerts,
     unacknowledgedAlerts,
+    areaId: areaId || null,
     lastUpdated: new Date().toISOString()
   };
 }

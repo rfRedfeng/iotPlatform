@@ -3,12 +3,16 @@
  * POST /api/auth/login       - 登录（同步返回 JWT）
  * POST /api/auth/register   - 注册用户（异步队列）
  * POST /api/auth/refresh    - 刷新 Token
+ * GET  /api/auth/me         - 当前登录用户 + 租户信息
  */
 
 import express from 'express';
 import crypto from 'crypto';
 import { login, refreshAccessToken } from '../services/AuthService.js';
+import { getById as getTenantById } from '../services/TenantService.js';
+import UserRepository from '../data-access/mysql/repositories/UserRepository.js';
 import CacheManager from '../data-access/redis/CacheManager.js';
+import { authMiddleware } from '../middleware/auth.js';
 
 const router = express.Router();
 const RESULT_TTL = 300;
@@ -89,6 +93,28 @@ router.post('/refresh', async (req, res, next) => {
     if (err.message.includes('Invalid') || err.message.includes('not found')) {
       return res.status(401).json({ success: false, error: { code: 401, message: err.message } });
     }
+    next(err);
+  }
+});
+
+/**
+ * GET /api/auth/userinfo
+ * 返回当前登录用户的完整信息 + 所属租户信息
+ * 需要 Bearer token
+ */
+router.get('/userinfo', authMiddleware, async (req, res, next) => {
+  try {
+    const user = await UserRepository.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ success: false, error: { code: 404, message: 'User not found' } });
+    }
+    // 剥掉密码哈希再返回
+    const { passwordHash, ...safeUser } = user;
+
+    const tenant = await getTenantById(req.user.tenantId);
+
+    res.json({ success: true, data: { user: safeUser, tenant } });
+  } catch (err) {
     next(err);
   }
 });
