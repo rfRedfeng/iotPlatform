@@ -120,7 +120,7 @@ describe('POST /api/auth/refresh', () => {
   });
 });
 
-describe('POST /api/auth/register（异步）', () => {
+describe('POST /api/auth/register（C-4 同步）', () => {
   beforeAll(async () => {
     await new Promise(resolve => server.listen(TEST_PORT, resolve));
     await seedTenant();
@@ -131,14 +131,11 @@ describe('POST /api/auth/register（异步）', () => {
     await closePool();
   });
 
-  beforeEach(async () => {
-    await clearRedisQueue();
-  });
-
-  test('有效注册信息 → 202 + taskId', async () => {
+  test('有效注册信息（带 admin token）→ 200 + 同步返回用户', async () => {
     const uniqueUsername = `newuser_${Date.now()}`;
     const res = await request(app)
       .post('/api/auth/register')
+      .set('Authorization', `Bearer ${adminToken()}`)
       .send({
         username: uniqueUsername,
         password: 'password123',
@@ -146,25 +143,42 @@ describe('POST /api/auth/register（异步）', () => {
         email: `${uniqueUsername}@test.local`,
       });
 
-    expect(res.status).toBe(202);
+    expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(res.body.taskId).toBeDefined();
+    expect(res.body.data.username).toBe(uniqueUsername);
+    // 验证: 不应再返回 taskId (异步队列)
+    expect(res.body.taskId).toBeUndefined();
+  });
 
-    // 验证任务已入队
-    const { waitForTaskResult } = await import('../helpers/redis.js');
-    const result = await waitForTaskResult(res.body.taskId, 5000);
-    expect(result).not.toBeNull();
-    expect(result.status).toBe('success');
-    expect(result.data.username).toBe(uniqueUsername);
+  test('无 token → 401', async () => {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({ username: 'someone', password: 'password123' });
+    expect(res.status).toBe(401);
   });
 
   test('缺少必填字段 → 400', async () => {
     const res = await request(app)
       .post('/api/auth/register')
-      .send({ username: 'someuser' }); // 缺少 password
-
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ username: 'someuser' });
     expect(res.status).toBe(400);
-    expect(res.body.success).toBe(false);
+  });
+
+  test('密码过短 → 400', async () => {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ username: 'short_pw', password: '123' });
+    expect(res.status).toBe(400);
+  });
+
+  test('重复用户名 → 409', async () => {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ username: 'test_admin', password: 'password123' });
+    expect(res.status).toBe(409);
   });
 });
 

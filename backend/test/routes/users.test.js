@@ -40,7 +40,7 @@ describe('GET /api/users', () => {
   });
 });
 
-describe('POST /api/users（异步）', () => {
+describe('POST /api/users（C-4 同步）', () => {
   beforeAll(async () => {
     await new Promise(resolve => server.listen(TEST_PORT, resolve));
     await cleanupTables();
@@ -52,11 +52,7 @@ describe('POST /api/users（异步）', () => {
     await closePool();
   });
 
-  beforeEach(async () => {
-    await clearRedisQueue();
-  });
-
-  test('有效数据 → 202 + taskId → Worker 处理成功', async () => {
+  test('有效数据（指定 tenantId）→ 200 + 同步返回用户', async () => {
     const uniqueUsername = `newuser_${Date.now()}`;
     const res = await request(app)
       .post('/api/users')
@@ -66,26 +62,64 @@ describe('POST /api/users（异步）', () => {
         password: 'password123',
         role: 'user',
         email: `${uniqueUsername}@test.local`,
+        tenantId: 1,
       });
 
-    expect(res.status).toBe(202);
-    expect(res.body.taskId).toBeDefined();
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.username).toBe(uniqueUsername);
+    expect(res.body.data.tenantId).toBe(1);
+    // 验证: 不应再返回 taskId (异步队列)
+    expect(res.body.taskId).toBeUndefined();
+  });
 
-    const { waitForTaskResult } = await import('../helpers/redis.js');
-    const result = await waitForTaskResult(res.body.taskId, 5000);
-    expect(result).not.toBeNull();
-    expect(result.status).toBe('success');
-    expect(result.data.username).toBe(uniqueUsername);
+  test('缺少 tenantId → 400', async () => {
+    const res = await request(app)
+      .post('/api/users')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({
+        username: 'no_tenant',
+        password: 'password123',
+        role: 'user',
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/tenantId/);
   });
 
   test('缺少必填字段 → 400', async () => {
     const res = await request(app)
       .post('/api/users')
       .set('Authorization', `Bearer ${adminToken()}`)
-      .send({ username: 'someuser' }); // 缺少 password
+      .send({ username: 'someuser', tenantId: 1 }); // 缺少 password
 
     expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);
+  });
+
+  test('重复用户名 → 409', async () => {
+    // 先创建一个
+    const username = `dupuser_${Date.now()}`;
+    await request(app)
+      .post('/api/users')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({
+        username,
+        password: 'password123',
+        role: 'user',
+        tenantId: 1,
+      });
+
+    // 再创建同名
+    const res = await request(app)
+      .post('/api/users')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({
+        username,
+        password: 'password456',
+        role: 'user',
+        tenantId: 1,
+      });
+    expect(res.status).toBe(409);
   });
 });
 

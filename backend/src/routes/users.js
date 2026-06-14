@@ -13,7 +13,7 @@
 
 import express from 'express';
 import crypto from 'crypto';
-import { list, listAll, getById } from '../services/UserService.js';
+import { list, listAll, getById, createUser } from '../services/UserService.js';
 import CacheManager from '../data-access/redis/CacheManager.js';
 
 const router = express.Router();
@@ -65,6 +65,7 @@ router.get('/:id', async (req, res, next) => {
 
 /**
  * POST /api/users - 仅系统管理员
+ * 同步创建 (C-4): 直接在路由层 bcrypt.hash 后落库,密码不进 Redis 队列
  */
 router.post('/', async (req, res, next) => {
   if (!isAdmin(req.user)) {
@@ -78,24 +79,27 @@ router.post('/', async (req, res, next) => {
     if (!username || !password) {
       return res.status(400).json({ success: false, error: { code: 400, message: 'username and password are required' } });
     }
+    if (password.length < 6) {
+      return res.status(400).json({ success: false, error: { code: 400, message: 'password must be at least 6 characters' } });
+    }
     // 管理员必须指定租户(admin 自身的 tenantId=0 不能作为默认值)
     if (!tenantId && tenantId !== 0) {
       return res.status(400).json({ success: false, error: { code: 400, message: '管理员创建用户必须指定 tenantId' } });
     }
 
-    const taskId = crypto.randomUUID();
-    const task = {
-      id: taskId,
-      type: 'user.create',
-      payload: { username, password, role: role || 'user', email, tenantId },
-      tenantId: req.tenantId,
-      userId: req.user.userId,
-      timestamp: new Date().toISOString()
-    };
-
-    await CacheManager.enqueue('task:queue', JSON.stringify(task));
-    res.status(202).json({ success: true, taskId });
+    // C-4: 同步注册,不走队列 — 防止明文密码进 Redis
+    const created = await createUser({
+      username,
+      password,
+      role: role || 'user',
+      email,
+      tenantId,
+    });
+    res.json({ success: true, data: created });
   } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY' || err.errno === 1062) {
+      return res.status(409).json({ success: false, error: { code: 409, message: 'username already exists' } });
+    }
     next(err);
   }
 });
