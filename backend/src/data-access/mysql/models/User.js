@@ -15,7 +15,8 @@ const User = {
   insertableFields: ['tenantId', 'username', 'passwordHash', 'role', 'email'],
 
   // 允许更新的字段
-  updatableFields: ['tenantId', 'username', 'passwordHash', 'role', 'email']
+  // C-5: 移除 tenantId — 跨租户用户移动应走专用端点
+  updatableFields: ['username', 'passwordHash', 'role', 'email']
 };
 
 export default User;

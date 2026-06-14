@@ -84,15 +84,23 @@ router.post('/', async (req, res, next) => {
 /**
  * PUT /api/areas/:id
  * 更新区域（异步 → 202）
+ * C-5: 路由层白名单过滤 — 防止改 tenantId / createdAt
  */
+const AREA_UPDATABLE_WHITELIST = ['name', 'code', 'description', 'parentId'];
+
 router.put('/:id', async (req, res, next) => {
   try {
     const areaId = parseInt(req.params.id);
+    const safeUpdates = {};
+    for (const key of AREA_UPDATABLE_WHITELIST) {
+      if (key in req.body) safeUpdates[key] = req.body[key];
+    }
+
     const taskId = crypto.randomUUID();
     const task = {
       id: taskId,
       type: 'area.update',
-      payload: { areaId, ...req.body },
+      payload: { areaId, ...safeUpdates },
       tenantId: req.tenantId,
       userId: req.user.userId,
       timestamp: new Date().toISOString()

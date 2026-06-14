@@ -106,11 +106,16 @@ router.post('/', async (req, res, next) => {
 
 /**
  * PUT /api/users/:id
- *  - admin:   任意用户任意字段（含 tenantId 切换）
+ *  - admin:   任意用户,可改 username/email/password/role/tenantId (5 个字段)
  *  - 自己:    username/email/password（不含 role/tenantId）
- *  - manager: 本租户其他用户,可改 username/email/role/password（不含 tenantId）
+ *  - manager: 本租户其他用户,可改 username/email/password（不含 role/tenantId）
  *  - user:    改其他用户 → 403
+ *
+ * C-5: 显式白名单过滤。即使 User.updatableFields 含 tenantId,
+ * 路由层也要先过滤,避免依赖 repo 层的字段过滤。
  */
+const ADMIN_ALLOWED = ['username', 'email', 'password', 'role', 'tenantId'];
+
 router.put('/:id', async (req, res, next) => {
   const targetId = parseInt(req.params.id);
   const isSelf = targetId === req.user.userId;
@@ -119,7 +124,17 @@ router.put('/:id', async (req, res, next) => {
   const manager = role === 'manager';
 
   if (admin) {
-    // 全部字段放行
+    // C-5: 限制 admin 只能改这 5 个字段,不允许改 passwordHash / createdAt 等
+    const filtered = {};
+    for (const key of ADMIN_ALLOWED) {
+      if (key in req.body) filtered[key] = req.body[key];
+    }
+    if (Object.keys(filtered).length === 0) {
+      return res.status(400).json({
+        success: false, error: { code: 400, message: '至少提供一个可修改字段' }
+      });
+    }
+    req.body = filtered;
   } else if (isSelf) {
     // 自己:username/email/password（不含 role/tenantId）
     const allowed = ['username', 'email', 'password'];

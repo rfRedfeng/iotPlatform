@@ -82,15 +82,23 @@ router.post('/rules', async (req, res, next) => {
 
 /**
  * PUT /api/alerts/rules/:id
+ * C-5: 路由层白名单过滤
  */
+const ALERT_RULE_UPDATABLE_WHITELIST = ['name', 'metric', 'condition', 'threshold', 'durationSeconds', 'enabled', 'deviceId'];
+
 router.put('/rules/:id', async (req, res, next) => {
   try {
     const ruleId = parseInt(req.params.id);
+    const safeUpdates = {};
+    for (const key of ALERT_RULE_UPDATABLE_WHITELIST) {
+      if (key in req.body) safeUpdates[key] = req.body[key];
+    }
+
     const taskId = crypto.randomUUID();
     const task = {
       id: taskId,
       type: 'alert.rule.update',
-      payload: { ruleId, ...req.body },
+      payload: { ruleId, ...safeUpdates },
       tenantId: req.tenantId,
       userId: req.user.userId,
       timestamp: new Date().toISOString()

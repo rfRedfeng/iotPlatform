@@ -261,6 +261,54 @@ describe('DELETE /api/devices/:id（异步）', () => {
     expect(result.status).toBe('success');
   });
 });
+
+// ============================================================
+// C-5: PUT 字段过滤 — 防止改 tenantId / deviceKey / deviceSecret
+// ============================================================
+describe('C-5: PUT /api/devices/:id 字段过滤', () => {
+  let deviceId;
+
+  beforeAll(async () => {
+    await new Promise(resolve => server.listen(TEST_PORT, resolve));
+    await cleanupTables();
+    await seedTenant();
+    deviceId = await seedDevice(1);
+  });
+
+  afterAll(async () => {
+    server.close();
+    await closePool();
+  });
+
+  beforeEach(async () => {
+    await clearRedisQueue();
+  });
+
+  test('尝试改 tenantId/deviceKey/deviceSecret → 仅合法字段入队,敏感字段被丢', async () => {
+    const res = await request(app)
+      .put(`/api/devices/${deviceId}`)
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({
+        name: 'New Name',
+        tenantId: 999,           // 应被丢
+        deviceKey: 'hacked_key', // 应被丢
+        deviceSecret: 'hacked',  // 应被丢
+        lastSeen: new Date().toISOString(), // 应被丢
+      });
+
+    expect(res.status).toBe(202);
+    const { waitForTaskResult } = await import('../helpers/redis.js');
+    const result = await waitForTaskResult(res.body.taskId, 5000);
+    expect(result).not.toBeNull();
+    expect(result.status).toBe('success');
+    // 验证: 修改后设备 tenantId 仍为 1,deviceKey 未被改
+    const { default: DeviceRep } = await import('../../src/data-access/mysql/repositories/DeviceRepository.js');
+    const updated = await DeviceRep.findById(deviceId);
+    expect(updated.tenantId).toBe(1);
+    expect(updated.deviceKey).not.toBe('hacked_key');
+  });
+});
+
 // 文件级清理
 afterAll(async () => {
   await clearRedisQueue();

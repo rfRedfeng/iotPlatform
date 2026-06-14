@@ -154,15 +154,30 @@ router.post('/', async (req, res, next) => {
 /**
  * PUT /api/devices/:id
  * 更新设备（异步队列 → 202）
+ *
+ * C-5: 路由层白名单过滤 — 防止客户端修改 tenantId / deviceKey / deviceSecret / lastSeen
+ * 即使 Device.updatableFields 没列入这些字段,显式拒绝更安全
  */
+const DEVICE_UPDATABLE_WHITELIST = ['name', 'areaId', 'protocol', 'deviceType', 'status', 'metadata'];
+
 router.put('/:id', async (req, res, next) => {
   try {
     const deviceId = parseInt(req.params.id);
+    // C-5: 严格白名单,只放行可改字段
+    const safeUpdates = {};
+    for (const key of DEVICE_UPDATABLE_WHITELIST) {
+      if (key in req.body) safeUpdates[key] = req.body[key];
+    }
+    const blocked = Object.keys(req.body).filter(k => !DEVICE_UPDATABLE_WHITELIST.includes(k));
+    if (blocked.length > 0) {
+      console.warn(`[devices] PUT /:id blocked fields: ${blocked.join(',')}`);
+    }
+
     const taskId = crypto.randomUUID();
     const task = {
       id: taskId,
       type: 'device.update',
-      payload: { deviceId, ...req.body },
+      payload: { deviceId, ...safeUpdates },
       tenantId: req.tenantId,
       userId: req.user.userId,
       timestamp: new Date().toISOString()
