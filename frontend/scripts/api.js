@@ -70,12 +70,17 @@ async function request(path, opts = {}) {
         throw err;
     }
 
-    // 404 on /auth/userinfo = 用户被删了(token 还在 DB 但 user 没了)
-    if (res.status === 404 && path === '/auth/userinfo') {
-        handleAuthFailure('用户不存在,token 已失效');
-        const err = new Error('USER_NOT_FOUND');
-        err.code = 'HTTP_4XX';
-        throw err;
+    // I-13: 404 统一按 envelope.error.code 处理
+    // 之前的特殊路径判断 (/auth/userinfo) 让其他 404 走不通的错误流
+    if (res.status === 404) {
+        // 任何 404 都被当作 envelope 错误,由调用方决定如何处理
+        // 只有 /auth/userinfo 的 404 才视为 auth failure
+        if (path === '/auth/userinfo') {
+            handleAuthFailure('用户不存在,token 已失效');
+            const err = new Error('USER_NOT_FOUND');
+            err.code = 'HTTP_4XX';
+            throw err;
+        }
     }
 
     if (!res.ok) {

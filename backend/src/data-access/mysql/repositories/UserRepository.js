@@ -3,8 +3,9 @@ import dataSource from '../DataSourceManger.js';
 import { rowToCamel, rowsToCamel } from '../utils/rowMapper.js';
 
 class UserRepository {
-  // 查询所有
-  async findAll({ page = 1, pageSize = 20 } = {}) {
+  // I-7: 跨租户列出所有用户 — 危险接口,仅 admin 使用
+  // 原 findAll 名字过于通用,易被误用导致跨租户泄漏
+  async findAllAcrossTenants({ page = 1, pageSize = 20 } = {}) {
     const pool = dataSource.getMysqlPool();
     const offset = (page - 1) * pageSize;
     // LIMIT/OFFSET 不能作为 prepared-statement 参数，用模板字符串内联（pageSize/offset 已是整数）

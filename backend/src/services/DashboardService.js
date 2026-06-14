@@ -9,6 +9,7 @@ import DeviceCache from '../data-processing/cache/DeviceCache.js';
 import MetricCache from '../data-processing/cache/MetricCache.js';
 import AlertCache from '../data-processing/cache/AlertCache.js';
 import TimeSeriesRepo from '../data-access/tdengine/TimeSeriesRepo.js';
+import CacheManager from '../data-access/redis/CacheManager.js';
 
 /**
  * 获取仪表盘摘要
@@ -26,9 +27,11 @@ export async function getSummary(tenantId, areaId = null) {
   }
   const totalDevices = allDevices?.length || 0;
 
+  // I-3: 用 MGET 批量拿设备状态,避免 N 次 Redis 往返
+  const statusKeys = (allDevices || []).map(d => `device:status:${d.id}`);
+  const statuses = statusKeys.length > 0 ? await CacheManager.mget(statusKeys) : [];
   let onlineDevices = 0;
-  for (const device of allDevices || []) {
-    const status = await DeviceCache.getStatus(device.id);
+  for (const status of statuses) {
     if (status === 'online') onlineDevices++;
   }
 
@@ -58,6 +61,7 @@ export async function getSummary(tenantId, areaId = null) {
 
 /**
  * 获取设备指标趋势数据
+ * I-5: 用 TDengine INTERVAL 时间分桶 + JS 侧 metric 解析与平均
  */
 export async function getTrends(deviceId, tenantId, metric, startTime, endTime, interval = '1h') {
   // 校验设备归属
@@ -66,41 +70,21 @@ export async function getTrends(deviceId, tenantId, metric, startTime, endTime, 
     throw new Error('Device not found');
   }
 
-  // 从 TDengine 查询原始数据
-  const rawData = await TimeSeriesRepo.getDeviceDataByTimeRange(deviceId, startTime, endTime, { pageSize: 1000 });
+  const intervalMs = _intervalToMs(interval);
+  const raw = await TimeSeriesRepo.getDeviceDataAggregated(
+    deviceId, metric, startTime, endTime, intervalMs
+  );
 
-  if (!rawData || !Array.isArray(rawData)) {
+  if (!raw || !Array.isArray(raw)) {
     return { deviceId, metric, interval, dataPoints: [] };
   }
 
-  // 按 interval 降采样（简单平均）
-  const intervalMs = _intervalToMs(interval);
-  const buckets = {};
+  const dataPoints = raw.map((row) => ({
+    timestamp: typeof row.ts === 'string' ? row.ts : new Date(row.ts).toISOString(),
+    value: row.value,
+  }));
 
-  for (const row of rawData) {
-    const ts = new Date(row.ts).getTime();
-    const bucketKey = Math.floor(ts / intervalMs) * intervalMs;
-    if (!buckets[bucketKey]) buckets[bucketKey] = { sum: 0, count: 0 };
-    // 尝试从 metrics JSON 中提取指标值
-    let value;
-    try {
-      const metrics = typeof row.metrics === 'string' ? JSON.parse(row.metrics) : row.metrics;
-      value = metrics[metric];
-    } catch {
-      continue;
-    }
-    if (typeof value === 'number') {
-      buckets[bucketKey].sum += value;
-      buckets[bucketKey].count++;
-    }
-  }
-
-  const dataPoints = Object.entries(buckets)
-    .sort(([a], [b]) => parseInt(a) - parseInt(b))
-    .map(([ts, bucket]) => ({
-      timestamp: new Date(parseInt(ts)).toISOString(),
-      value: bucket.sum / bucket.count
-    }));
+  return { deviceId, metric, interval, dataPoints };
 
   return { deviceId, metric, interval, dataPoints };
 }

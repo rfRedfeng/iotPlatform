@@ -13,6 +13,10 @@ import { fileURLToPath } from 'url';
 
 dotenv.config();
 
+// 测试用独立队列 key,避免与生产运行的 server 抢占 (I-2 BLPOP 时代尤其重要)
+// 必须在 import worker 之前设置,因为 worker 启动时读取 QUEUE_KEY
+process.env.WORKER_QUEUE_KEY = `task:queue:test:${process.pid}:${Date.now()}`;
+
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -77,12 +81,14 @@ async function ensureWorker() {
 ensureWorker();
 
 /**
- * 关闭后台 Worker，让 Jest 测试结束后不会有"Cannot log after tests are done"警告
- * Worker 是可重启的，下个 describe 的 beforeAll 通过 ensureWorker() 自动恢复
+ * 关闭后台 Worker，并等待循环退出，避免 "Cannot log after tests are done" 警告
  */
 export async function closeWorker() {
-  const { stopWorker } = await import('../src/services/worker.js');
+  const { stopWorker, isWorkerRunning } = await import('../src/services/worker.js');
+  if (!isWorkerRunning()) return;
   stopWorker();
+  // BLPOP 最多阻塞 1s,等待它释放 + 一次 while 循环
+  await new Promise(r => setTimeout(r, 1100));
 }
 
 /**

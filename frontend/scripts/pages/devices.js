@@ -69,10 +69,16 @@ export function render(root) {
     statusFilter.addEventListener('change', () => repaintTable());
 
     // WS 监听 task_result:用 msg.taskType 区分
+    // I-10: 200ms 去抖,避免批量操作时每个 task_result 都触发一次完整列表刷新
+    let reloadTimer = null;
     const offWs = onWs('task_result', (msg) => {
         if (msg.status === 'success' && msg.taskType && msg.taskType.startsWith('device.')) {
-            console.log('[devices] task_result received:', msg.taskType, '- reloading');
-            loadDevices();
+            console.log('[devices] task_result received:', msg.taskType, '- scheduling reload');
+            if (reloadTimer) clearTimeout(reloadTimer);
+            reloadTimer = setTimeout(() => {
+                reloadTimer = null;
+                loadDevices();
+            }, 200);
         }
     });
 

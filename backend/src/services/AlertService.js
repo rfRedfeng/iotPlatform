@@ -40,7 +40,10 @@ export async function listEvents(tenantId, { page = 1, pageSize = 20 } = {}) {
 }
 
 export async function getEventById(eventId, tenantId) {
-  return await AlertEventRepository.findById(eventId);
+  // I-8: 真正用 tenantId 校验,与 getRuleById 保持一致
+  const event = await AlertEventRepository.findById(eventId);
+  if (!event || event.tenantId !== tenantId) return null;
+  return event;
 }
 
 // ========== 规则写入 ==========

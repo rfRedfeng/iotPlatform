@@ -8,12 +8,13 @@ import CacheManager from '../data-access/redis/CacheManager.js';
 import RefreshTokenRepository from '../data-access/mysql/repositories/RefreshTokenRepository.js';
 import RealtimePusher from '../data-processing/RealtimePusher.js';
 import { getHandler } from './handlerRegistry.js';
+import { TASK_QUEUE_KEY, TASK_RESULT_PREFIX } from '../config/queue.js';
 
-const QUEUE_KEY = 'task:queue';
+const QUEUE_KEY = TASK_QUEUE_KEY;
+const RESULT_PREFIX = TASK_RESULT_PREFIX;
 const RESULT_TTL = 300; // 5min 结果过期时间
-const POLL_INTERVAL_MS = 100; // 100ms 轮询一次
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5min 清理一次过期 refreshToken
-const CLEANUP_EVERY_N_LOOPS = 100; // 兜底：每 100 个空轮询也触发一次
+const BLPOP_TIMEOUT_SEC = 1; // I-2: BLPOP 阻塞 1s (兼顾延迟和清理周期)
 
 // 进行任务处理的主循环
 let running = true;
@@ -50,18 +51,17 @@ export async function startWorker() {
 }
 
 async function _runLoop() {
-  let emptyLoops = 0;
   let lastCleanup = Date.now();
   while (running) {
     try {
-      const taskStr = await CacheManager.dequeue(QUEUE_KEY);
+      // I-2: 用 BLPOP 替代 LPOP + sleep,空队列时阻塞等待 1s
+      // (阻塞时 _runLoop 不会跑,定时清理的 lastCleanup 也不会被误判)
+      const taskStr = await CacheManager.blockingDequeue(QUEUE_KEY, BLPOP_TIMEOUT_SEC);
       if (!taskStr) {
-        emptyLoops++;
-        // C-1: 周期性清理过期 refreshToken (按时间 + 按空轮询次数兜底)
+        // C-1: 即使阻塞中也要周期性清理 (timeout=1s 时,每秒都会进到这里)
         const now = Date.now();
-        if (now - lastCleanup > CLEANUP_INTERVAL_MS || emptyLoops >= CLEANUP_EVERY_N_LOOPS) {
+        if (now - lastCleanup > CLEANUP_INTERVAL_MS) {
           lastCleanup = now;
-          emptyLoops = 0;
           try {
             const n = await RefreshTokenRepository.deleteExpired();
             if (n > 0) console.log(`[Worker] cleanup: deleted ${n} expired refreshToken(s)`);
@@ -69,10 +69,8 @@ async function _runLoop() {
             console.warn('[Worker] refreshToken cleanup failed:', e.message);
           }
         }
-        await sleep(POLL_INTERVAL_MS);
         continue;
       }
-      emptyLoops = 0;
 
       let task;
       try {
@@ -124,7 +122,7 @@ async function _writeResult(taskId, tenantId, result) {
   }
   result.processedAt = new Date().toISOString();
   try {
-    await CacheManager.set(`task:result:${taskId}`, JSON.stringify(result), RESULT_TTL);
+    await CacheManager.set(`${RESULT_PREFIX}${taskId}`, JSON.stringify(result), RESULT_TTL);
     if (tenantId !== undefined && tenantId !== null) {
       console.log(`[Worker] 推送结果 taskId=${taskId} tenantId=${tenantId} status=${result.status} taskType=${result.taskType}`);
       RealtimePusher.pushTaskResult(tenantId, taskId, result);
@@ -134,8 +132,4 @@ async function _writeResult(taskId, tenantId, result) {
   } catch (err) {
     console.error('[Worker] 写入结果失败:', err.message);
   }
-}
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
 }

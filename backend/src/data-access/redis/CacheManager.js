@@ -37,9 +37,11 @@ class CacheManager {
     }
     const client = await this.getClient();
     const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
-    await client.set(key, stringValue);
+    // I-6: 原子 SET + EX (避免 set + expire 两步之间崩溃导致永久驻留)
     if (ttlSeconds > 0) {
-      await client.expire(key, ttlSeconds);
+      await client.set(key, stringValue, { EX: ttlSeconds });
+    } else {
+      await client.set(key, stringValue);
     }
     return true;
   }
@@ -51,6 +53,18 @@ class CacheManager {
     const client = await this.getClient();
     const value = await client.get(key);
     return value ?? null;
+  }
+
+  /**
+   * 批量 GET (I-3) — 替代 N 次 get 调用
+   * @param {string[]} keys
+   * @returns {Promise<(string|null)[]>} 与 keys 顺序一致
+   */
+  async mget(keys) {
+    if (!Array.isArray(keys) || keys.length === 0) return [];
+    const client = await this.getClient();
+    const values = await client.mGet(keys);
+    return values.map(v => v ?? null);
   }
 
   async del(key) {
@@ -162,6 +176,21 @@ class CacheManager {
     }
     const client = await this.getClient();
     return await client.lPop(key);
+  }
+
+  /**
+   * 阻塞式出队 (I-2): 队列空时挂起直到有任务或超时
+   * 0 表示永久阻塞 (谨慎使用), 生产环境建议 1-5s
+   * @param {string} key
+   * @param {number} timeoutSec 0 = 永久
+   * @returns {Promise<string|null>}
+   */
+  async blockingDequeue(key, timeoutSec = 0) {
+    if (!key) return null;
+    const client = await this.getClient();
+    // redis@4 的 blPop 返回 { key, element } 或 null
+    const result = await client.blPop(key, timeoutSec);
+    return result && result.element ? result.element : null;
   }
 
   async peekQueue(key) {

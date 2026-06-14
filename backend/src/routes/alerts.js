@@ -13,6 +13,7 @@ import express from 'express';
 import crypto from 'crypto';
 import { listRules, getRuleById, listEvents, getEventById } from '../services/AlertService.js';
 import CacheManager from '../data-access/redis/CacheManager.js';
+import { TASK_QUEUE_KEY } from '../config/queue.js';
 
 const router = express.Router();
 
@@ -73,7 +74,7 @@ router.post('/rules', async (req, res, next) => {
       timestamp: new Date().toISOString()
     };
 
-    await CacheManager.enqueue('task:queue', JSON.stringify(task));
+    await CacheManager.enqueue(TASK_QUEUE_KEY, JSON.stringify(task));
     res.status(202).json({ success: true, taskId });
   } catch (err) {
     next(err);
@@ -104,7 +105,7 @@ router.put('/rules/:id', async (req, res, next) => {
       timestamp: new Date().toISOString()
     };
 
-    await CacheManager.enqueue('task:queue', JSON.stringify(task));
+    await CacheManager.enqueue(TASK_QUEUE_KEY, JSON.stringify(task));
     res.status(202).json({ success: true, taskId });
   } catch (err) {
     next(err);
@@ -127,7 +128,7 @@ router.delete('/rules/:id', async (req, res, next) => {
       timestamp: new Date().toISOString()
     };
 
-    await CacheManager.enqueue('task:queue', JSON.stringify(task));
+    await CacheManager.enqueue(TASK_QUEUE_KEY, JSON.stringify(task));
     res.status(202).json({ success: true, taskId });
   } catch (err) {
     next(err);
@@ -169,7 +170,7 @@ router.put('/events/:id/ack', async (req, res, next) => {
       timestamp: new Date().toISOString()
     };
 
-    await CacheManager.enqueue('task:queue', JSON.stringify(task));
+    await CacheManager.enqueue(TASK_QUEUE_KEY, JSON.stringify(task));
     res.status(202).json({ success: true, taskId });
   } catch (err) {
     next(err);

@@ -13,6 +13,7 @@ import crypto from 'crypto';
 import { list, getById, getDeviceData, getDeviceHistory } from '../services/DeviceService.js';
 import CacheManager from '../data-access/redis/CacheManager.js';
 import { assertIntegerId, assertIsoTimestamp } from '../utils/sqlSanitizer.js';
+import { TASK_QUEUE_KEY } from '../config/queue.js';
 
 const router = express.Router();
 
@@ -144,7 +145,7 @@ router.post('/', async (req, res, next) => {
       timestamp: new Date().toISOString()
     };
 
-    await CacheManager.enqueue('task:queue', JSON.stringify(task));
+    await CacheManager.enqueue(TASK_QUEUE_KEY, JSON.stringify(task));
     res.status(202).json({ success: true, taskId });
   } catch (err) {
     next(err);
@@ -183,7 +184,7 @@ router.put('/:id', async (req, res, next) => {
       timestamp: new Date().toISOString()
     };
 
-    await CacheManager.enqueue('task:queue', JSON.stringify(task));
+    await CacheManager.enqueue(TASK_QUEUE_KEY, JSON.stringify(task));
     res.status(202).json({ success: true, taskId });
   } catch (err) {
     next(err);
@@ -206,7 +207,7 @@ router.post('/:id/regenerate-secret', async (req, res, next) => {
       userId: req.user.userId,
       timestamp: new Date().toISOString()
     };
-    await CacheManager.enqueue('task:queue', JSON.stringify(task));
+    await CacheManager.enqueue(TASK_QUEUE_KEY, JSON.stringify(task));
     res.status(202).json({ success: true, taskId });
   } catch (err) {
     next(err);
@@ -230,7 +231,7 @@ router.delete('/:id', async (req, res, next) => {
       timestamp: new Date().toISOString()
     };
 
-    await CacheManager.enqueue('task:queue', JSON.stringify(task));
+    await CacheManager.enqueue(TASK_QUEUE_KEY, JSON.stringify(task));
     res.status(202).json({ success: true, taskId });
   } catch (err) {
     next(err);

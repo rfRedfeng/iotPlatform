@@ -11,6 +11,7 @@ import express from 'express';
 import crypto from 'crypto';
 import { list, getById, getTree } from '../services/AreaService.js';
 import CacheManager from '../data-access/redis/CacheManager.js';
+import { TASK_QUEUE_KEY } from '../config/queue.js';
 
 const router = express.Router();
 
@@ -74,7 +75,7 @@ router.post('/', async (req, res, next) => {
       timestamp: new Date().toISOString()
     };
 
-    await CacheManager.enqueue('task:queue', JSON.stringify(task));
+    await CacheManager.enqueue(TASK_QUEUE_KEY, JSON.stringify(task));
     res.status(202).json({ success: true, taskId });
   } catch (err) {
     next(err);
@@ -106,7 +107,7 @@ router.put('/:id', async (req, res, next) => {
       timestamp: new Date().toISOString()
     };
 
-    await CacheManager.enqueue('task:queue', JSON.stringify(task));
+    await CacheManager.enqueue(TASK_QUEUE_KEY, JSON.stringify(task));
     res.status(202).json({ success: true, taskId });
   } catch (err) {
     next(err);
@@ -130,7 +131,7 @@ router.delete('/:id', async (req, res, next) => {
       timestamp: new Date().toISOString()
     };
 
-    await CacheManager.enqueue('task:queue', JSON.stringify(task));
+    await CacheManager.enqueue(TASK_QUEUE_KEY, JSON.stringify(task));
     res.status(202).json({ success: true, taskId });
   } catch (err) {
     next(err);

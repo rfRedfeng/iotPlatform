@@ -20,10 +20,15 @@ function requireAdmin(req, res, next) {
 }
 
 // GET: 所有登录用户可看（用户管理页需要显示租户名）
+// I-12: 非 admin 只返回 {id, name},admin 返回完整 (含 maxDevices/maxUsers/status)
 router.get('/', async (req, res, next) => {
     try {
         const list = await TenantRepository.findAll();
-        res.json({ success: true, data: list });
+        if (req.user.role === 'admin') {
+            return res.json({ success: true, data: list });
+        }
+        const safe = list.map(t => ({ id: t.id, name: t.name }));
+        res.json({ success: true, data: safe });
     } catch (err) {
         next(err);
     }

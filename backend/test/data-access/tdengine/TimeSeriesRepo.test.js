@@ -120,11 +120,12 @@ describe('TimeSeriesRepo - SQL injection guard (C-2/C-3)', () => {
   });
 
   describe('getDeviceDataAggregated (I-5)', () => {
-    test('合法入参下推 INTERVAL', async () => {
+    test('合法入参 → 走 SELECT * (TDengine 3.2 不支持 JSON_EXTRACT, JS 侧 bucketing)', async () => {
       await TimeSeriesRepo.getDeviceDataAggregated(1, 'temperature', '2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z', 3600000);
       const sql = mockExecute.mock.calls[0][0];
-      expect(sql).toContain('INTERVAL(3600000a)');
-      expect(sql).toContain("'$.temperature'");
+      expect(sql).toContain('SELECT * FROM d1');
+      expect(sql).toContain("'2024-01-01T00:00:00Z'");
+      expect(sql).toContain("'2024-12-31T23:59:59Z'");
     });
 
     test('metric 含注入 → 抛 400', async () => {

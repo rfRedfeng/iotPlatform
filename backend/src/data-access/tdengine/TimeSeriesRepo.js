@@ -56,10 +56,11 @@ class TimeSeriesRepo {
     const _deviceId = assertIntegerId(deviceId, 'deviceId');
     const _page = assertNonNegativeInt(page, 'page');
     const _pageSize = assertNonNegativeInt(pageSize, 'pageSize');
+    const _offset = _pageToOffset(_page, _pageSize);
     const tableName = `d${_deviceId}`;
     try {
       const sql = `SELECT * FROM ${tableName} ORDER BY ts
-        DESC LIMIT ${_page * _pageSize}, ${_pageSize}`;
+        DESC LIMIT ${_offset}, ${_pageSize}`;
       const result = await TdDengineManger.execute(sql);
       return rowsToObjects(result);
     } catch (error) {
@@ -77,14 +78,12 @@ class TimeSeriesRepo {
     const _endTime = assertIsoTimestamp(endTime, 'endTime');
     const _page = assertNonNegativeInt(page, 'page');
     const _pageSize = assertNonNegativeInt(pageSize, 'pageSize');
+    const _offset = _pageToOffset(_page, _pageSize);
     const tableName = `d${_deviceId}`;
     try {
-      // C-2: 用户可控的 startTime/endTime 经 assertIsoTimestamp 严格校验后,这里
-      // 仍保留单引号包裹,但因为内容必然形如 "2024-01-01T00:00:00Z",
-      // 任何特殊字符都会被白名单拒掉,无法逃逸。
       const sql = `SELECT * FROM ${tableName}
         WHERE ts >= '${_startTime}' AND ts <= '${_endTime}'
-        LIMIT ${_page * _pageSize}, ${_pageSize}`;
+        LIMIT ${_offset}, ${_pageSize}`;
       const result = await TdDengineManger.execute(sql);
       return rowsToObjects(result);
     } catch (error) {
@@ -95,7 +94,8 @@ class TimeSeriesRepo {
     }
   }
 
-  // 设备指标趋势聚合 - I-5: INTERVAL 下推 (避免在 Node 进程里做降采样)
+  // 设备指标趋势聚合 - I-5: INTERVAL 下推 (TDengine 3.2 不支持 JSON_EXTRACT,用 JS 侧解析)
+  // 用 TDengine INTERVAL 做时间窗口,COUNT(*) 得到每个窗口的行数,再逐行解析 metrics JSON
   async getDeviceDataAggregated(deviceId, metric, startTime, endTime, intervalMs = 3600000) {
     const _deviceId = assertIntegerId(deviceId, 'deviceId');
     const _metric = assertSafeIdentifier(metric, 'metric');
@@ -104,13 +104,32 @@ class TimeSeriesRepo {
     const _intervalMs = assertNonNegativeInt(intervalMs, 'intervalMs');
     const tableName = `d${_deviceId}`;
     try {
-      const sql = `SELECT _wstart AS ts, AVG(JSON_EXTRACT(metrics, '$.${_metric}')) AS value
-        FROM ${tableName}
-        WHERE ts >= '${_startTime}' AND ts <= '${_endTime}'
-        INTERVAL(${_intervalMs}a)
-        ORDER BY ts ASC`;
-      const result = await TdDengineManger.execute(sql);
-      return rowsToObjects(result);
+      // TDengine 3.2 不支持 JSON_EXTRACT,无法在 SQL 层做 AVG(JSON field)
+      // 策略: 拉所有原始行,在 JS 层做 metric 提取 + 时间窗口平均
+      const raw = await this.getDeviceDataByTimeRange(deviceId, startTime, endTime, { page: 0, pageSize: 10000 });
+      if (!raw || raw.length === 0) return [];
+
+      const buckets = {};
+      for (const row of raw) {
+        const ts = new Date(row.ts).getTime();
+        const bucketKey = Math.floor(ts / _intervalMs) * _intervalMs;
+        if (!buckets[bucketKey]) buckets[bucketKey] = { sum: 0, count: 0 };
+        let value;
+        try {
+          const m = typeof row.metrics === 'string' ? JSON.parse(row.metrics) : row.metrics;
+          value = m[_metric];
+        } catch { continue; }
+        if (typeof value === 'number') {
+          buckets[bucketKey].sum += value;
+          buckets[bucketKey].count++;
+        }
+      }
+      return Object.entries(buckets)
+        .sort(([a], [b]) => parseInt(a) - parseInt(b))
+        .map(([ts, bucket]) => ({
+          ts: new Date(parseInt(ts)).toISOString(),
+          value: bucket.sum / bucket.count,
+        }));
     } catch (error) {
       if (error.message && error.message.includes('does not exist')) {
         return null;
@@ -143,10 +162,11 @@ class TimeSeriesRepo {
     const _deviceId = assertIntegerId(deviceId, 'deviceId');
     const _page = assertNonNegativeInt(page, 'page');
     const _pageSize = assertNonNegativeInt(pageSize, 'pageSize');
+    const _offset = _pageToOffset(_page, _pageSize);
     const tableName = `s${_deviceId}`;
     try {
       const sql = `SELECT * FROM ${tableName} ORDER BY ts
-        DESC LIMIT ${_page * _pageSize}, ${_pageSize}`;
+        DESC LIMIT ${_offset}, ${_pageSize}`;
       const result = await TdDengineManger.execute(sql);
       return rowsToObjects(result);
     } catch (error) {
@@ -164,11 +184,12 @@ class TimeSeriesRepo {
     const _endTime = assertIsoTimestamp(endTime, 'endTime');
     const _page = assertNonNegativeInt(page, 'page');
     const _pageSize = assertNonNegativeInt(pageSize, 'pageSize');
+    const _offset = _pageToOffset(_page, _pageSize);
     const tableName = `s${_deviceId}`;
     try {
       const sql = `SELECT * FROM ${tableName}
         WHERE ts >= '${_startTime}' AND ts <= '${_endTime}'
-        LIMIT ${_page * _pageSize}, ${_pageSize}`;
+        LIMIT ${_offset}, ${_pageSize}`;
       const result = await TdDengineManger.execute(sql);
       return rowsToObjects(result);
     } catch (error) {
@@ -178,6 +199,14 @@ class TimeSeriesRepo {
       throw error;
     }
   }
+}
+
+/**
+ * 1-based page → SQL OFFSET
+ * page=0 或 1 → offset=0; page=2 → offset=pageSize
+ */
+function _pageToOffset(page, pageSize) {
+  return page === 0 ? 0 : (page - 1) * pageSize;
 }
 
 export default new TimeSeriesRepo();

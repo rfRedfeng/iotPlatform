@@ -1,18 +1,8 @@
 import CacheManager from '../../data-access/redis/CacheManager.js';
 
 class AlertCache {
-  // 缓存告警事件
-  async setAlertEvent(deviceId, ruleId) {
-    const key = `alert:event:${deviceId}`;
-    return await CacheManager.set(key, JSON.stringify(ruleId), 300);
-  }
-
-  // 获取最新告警事件
-  async getAlertEvent(deviceId) {
-    const key = `alert:event:${deviceId}`;
-    const data = await CacheManager.get(key);
-    return data ? JSON.parse(data) : null;
-  }
+  // I-9: 删除未被任何代码使用的 setAlertEvent / getAlertEvent
+  // 原因: key 用 deviceId,value 存单数 ruleId,多次写会互相覆盖,且无 reader
 
   // 缓存告警规则
   async setRules(deviceId, rules) {
