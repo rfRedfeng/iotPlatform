@@ -1,12 +1,13 @@
 {
-  "name": "iot-platform-frontend",
+  "name": "frontend",
   "version": "1.0.0",
-  "description": "IoT Cloud Platform Frontend",
-  "main": "index.html",
+  "description": "",
+  "main": "index.js",
   "scripts": {
-    "start": "echo 'Static files served by backend Express server'"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "dependencies": {
-    "chart.js": "^4.4.1"
-  }
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
 }

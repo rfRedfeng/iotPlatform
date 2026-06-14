@@ -11,10 +11,28 @@ class RealtimePusher {
 
   /**
    * 初始化 WebSocket 服务器（由 app.js 调用）
+   *
+   * 注册 'connection' 事件：每个新连接必须有 ws.user 信息（由 app.js upgrade handler 注入），
+   * 否则视为未授权,直接关闭。
    * @param {object} wsServer - ws.WebSocketServer 实例
    */
   init(wsServer) {
     this.server = wsServer;
+    wsServer.on('connection', (ws, request) => {
+      const user = ws.user;
+      if (!user || !user.tenantId) {
+        console.warn('[RealtimePusher] 未鉴权的连接,直接关闭');
+        try { ws.close(1008, 'unauthorized'); } catch {}
+        return;
+      }
+      this._addClient(user.tenantId, ws, user.userId);
+      console.log(`[RealtimePusher] 客户端已注册: tenant=${user.tenantId} user=${user.userId}`);
+
+      ws.on('close', () => {
+        this._removeClient(user.tenantId, ws);
+        console.log(`[RealtimePusher] 客户端断开: tenant=${user.tenantId} user=${user.userId}`);
+      });
+    });
     console.log('RealtimePusher initialized');
   }
 

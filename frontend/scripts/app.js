@@ -1,36 +1,39 @@
-// IoT Cloud Platform - Frontend Entry Point
-// This file will be expanded with routing and page management
+// scripts/app.js — 完整启动
+//
+// 启动顺序（必须严格）：
+//   1) 从 localStorage 恢复 token → setState
+//   2) 注册所有路由（含 publicRoute 标记）
+//   3) startRouter() —— 首次 dispatch 才会查到 accessToken
 
-console.log('IoT Cloud Platform Frontend Loaded');
+import { start as startRouter, route, publicRoute } from './router.js';
+import { setState } from './state.js';
+import { storage } from './utils.js';
+import { connect as connectWs } from './ws.js';
 
-// Simple client-side routing
-function navigateTo(page) {
-    const content = document.getElementById('page-content');
-    if (!content) return;
+import { render as renderHome } from './pages/home.js';
+import { render as renderLogin } from './pages/login.js';
+import { render as renderDevices } from './pages/devices.js';
+import { render as renderDeviceDetail } from './pages/device-detail.js';
+import { render as renderDashboard } from './pages/dashboard.js';
 
-    const routes = {
-        '/dashboard': '<h2>Dashboard</h2><p>Device overview and metrics</p>',
-        '/devices': '<h2>Devices</h2><p>Device management interface</p>',
-        '/users': '<h2>Users</h2><p>User management interface</p>',
-        '/areas': '<h2>Areas</h2><p>Area management interface</p>',
-        '/alerts': '<h2>Alerts</h2><p>Alert rules and events</p>'
-    };
+console.log('[I8] boot');
 
-    content.innerHTML = routes[page] || '<h2>Page Not Found</h2>';
+// 1) 恢复登录态
+const savedToken = storage.get('accessToken');
+const savedRefresh = storage.get('refreshToken');
+if (savedToken) {
+    setState({ accessToken: savedToken, refreshToken: savedRefresh });
+    console.log('[I8] restored token from localStorage');
+    connectWs();
 }
 
-// Handle navigation clicks
-document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('.nav-link').forEach(link => {
-        link.addEventListener('click', (e) => {
-            e.preventDefault();
-            const path = new URL(link.href).pathname;
-            navigateTo(path);
-        });
-    });
+// 2) 注册路由
+publicRoute('/login');
+route('/login', renderLogin);
+route('/', renderHome);
+route('/devices', renderDevices);
+route('/devices/:id', renderDeviceDetail);
+route('/dashboard', renderDashboard);
 
-    // Load dashboard by default
-    navigateTo('/dashboard');
-});
-
-export { navigateTo };
+// 3) 启动
+startRouter();

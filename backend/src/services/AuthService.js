@@ -87,6 +87,25 @@ export async function registerUser(payload, task) {
 }
 
 /**
+ * 验证 refreshToken 并返回 payload（不签发新 token）
+ * 用于 WebSocket upgrade 鉴权
+ * @returns {object|null} payload {userId, username, role, tenantId} 或 null
+ */
+export async function verifyRefreshToken(refreshToken) {
+    if (!refreshToken) return null;
+    const payload = verifyToken(refreshToken);
+    if (!payload) return null;
+    const stored = await RefreshTokenRepository.findByToken(refreshToken);
+    if (!stored) return null;
+    return {
+        userId: payload.userId,
+        username: payload.username,
+        role: payload.role,
+        tenantId: payload.tenantId,
+    };
+}
+
+/**
  * 刷新 Access Token
  * 规则：refreshToken 剩余有效期 < 1 天时，旋转（删除旧+签发新）
  */

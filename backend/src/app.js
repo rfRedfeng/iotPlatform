@@ -8,6 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import RealtimePusher from './data-processing/RealtimePusher.js';
+import { verifyRefreshToken } from './services/AuthService.js';
 import routes from './routes/index.js';
 
 // 加载环境变量
@@ -52,11 +53,32 @@ const server = http.createServer(app);
 const wsServer = new WebSocketServer({ noServer: true });
 RealtimePusher.init(wsServer);
 
-// 处理 WebSocket upgrade 请求
-server.on('upgrade', (request, socket, head) => {
-    wsServer.handleUpgrade(request, socket, head, (ws) => {
-        wsServer.emit('connection', ws, request);
-    });
+// 处理 WebSocket upgrade 请求 —— 用 refreshToken 鉴权
+server.on('upgrade', async (request, socket, head) => {
+    try {
+        // 1. 从 URL 拿 refreshToken（前端 ws.js 用 ?refreshToken=xxx 传）
+        const url = new URL(request.url, `http://${request.headers.host}`);
+        const refreshToken = url.searchParams.get('refreshToken');
+
+        // 2. 验证（JWT 签名 + 数据库存在性）
+        const user = await verifyRefreshToken(refreshToken);
+        if (!user) {
+            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+            socket.destroy();
+            console.warn('[ws upgrade] 鉴权失败,拒绝连接');
+            return;
+        }
+
+        // 3. 鉴权通过:把 user 绑到 ws 实例,RealtimePusher.init() 会从 ws.user 读
+        wsServer.handleUpgrade(request, socket, head, (ws) => {
+            ws.user = { userId: user.userId, tenantId: user.tenantId, role: user.role };
+            wsServer.emit('connection', ws, request);
+        });
+        console.log(`[ws upgrade] 鉴权通过: tenant=${user.tenantId} user=${user.userId}`);
+    } catch (err) {
+        console.error('[ws upgrade] 异常', err);
+        try { socket.destroy(); } catch {}
+    }
 });
 
 // ========== 启动 ==========

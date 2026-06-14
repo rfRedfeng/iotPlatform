@@ -1,55 +1,73 @@
-/* IoT Cloud Platform - Main Styles */
+/* IoT Cloud Platform - Main Styles
+   I4 重建,基础排版 + Header + 容器
+*/
 
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
+/* ────────── reset ────────── */
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* ────────── 基础排版 ────────── */
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
     line-height: 1.6;
     color: #333;
     background-color: #f5f5f5;
-}
-
-#app {
     min-height: 100vh;
 }
 
+a { color: #3498db; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+h1, h2, h3, h4 { color: #2c3e50; margin-bottom: 0.5rem; }
+p { margin-bottom: 0.75rem; }
+ul, ol { margin-left: 1.5rem; margin-bottom: 0.75rem; }
+
+button {
+    background: #3498db;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-size: 0.95rem;
+}
+button:hover:not(:disabled) { background: #2980b9; }
+button:disabled { background: #95a5a6; cursor: not-allowed; }
+
+input, select, textarea {
+    font-family: inherit;
+    font-size: 0.95rem;
+    border: 1px solid #bdc3c7;
+    border-radius: 4px;
+}
+
+/* ────────── 挂载点 ────────── */
+#app { min-height: 100vh; display: flex; flex-direction: column; }
+
+/* ────────── Header（受保护页面统一用）────────── */
 .header {
     background-color: #2c3e50;
     color: white;
     padding: 1rem 2rem;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
-
 .header h1 {
+    color: white;
     font-size: 1.5rem;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0;
 }
-
-.nav {
-    display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
+.header button {
+    background: #e74c3c;
+    color: white;
 }
+.header button:hover:not(:disabled) { background: #c0392b; }
 
-.nav-link {
-    color: #ecf0f1;
-    text-decoration: none;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    transition: background-color 0.2s;
-}
-
-.nav-link:hover {
-    background-color: #34495e;
-}
-
+/* ────────── 主内容区 ────────── */
 .main {
+    flex: 1;
     padding: 2rem;
     max-width: 1200px;
+    width: 100%;
     margin: 0 auto;
 }
 
@@ -60,8 +78,5 @@ body {
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
-/* Placeholder for page content */
-#page-content h2 {
-    color: #2c3e50;
-    margin-bottom: 1rem;
-}
+#page-content h2 { color: #2c3e50; margin-bottom: 1rem; }
+#page-content h3 { color: #34495e; margin-top: 1rem; margin-bottom: 0.5rem; }

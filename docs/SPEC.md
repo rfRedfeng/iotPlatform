@@ -1007,7 +1007,7 @@ const server = app.listen(PORT, () => {
 
 ### 11.1 代码风格
 - 使用 ES6+ 语法，箭头函数，async/await
-- 缩进：4空格
+- 缩进：2空格
 - 命名：camelCase（变量函数），PascalCase（类），SCREAMING_SNAKE_CASE（常量）
 - 每个文件不超过 300 行
 - 禁用 `var`，使用 `const`/`let`
@@ -1059,7 +1059,7 @@ chore: 构建/工具
 | Phase 2 | 数据访问层、Redis缓存、TDengine接入 | DAO层、缓存层 | ✅ 完成 |
 | Phase 3 | 业务服务层、API路由、认证中间件、异步队列Worker | 服务层、REST API、异步任务队列 | ✅ 完成 |
 | Phase 4 | 协议适配器、告警引擎、数据处理管道 | 设备接入、数据处理 | ✅ 完成 |
-| Phase 5 | 前端开发、仪表盘、实时推送 | 完整UI、数据可视化 | ❌ 未完成 |
+| Phase 5 | 前端开发、仪表盘、实时推送 | 完整UI、数据可视化 | 🚧 进行中（执行规范见 §14） |
 | Phase 6 | 测试、安全审计、部署文档 | 测试报告、部署手册 | ❌ 未完成 |
 
 ---
@@ -1247,3 +1247,274 @@ startWorker();
 
 *本文档版本: v1.2*
 *最后更新: 2026-06-14*
+
+---
+
+## 14. Phase 5 — 前端执行规范（v1.3 新增）
+
+§4 / §6.2 是高层架构设计，本节是 Phase 5 的**执行级规范**：可验证的验收条件、目录约定、代码风格、测试策略与边界。所有前端代码改动必须能映射回本节任一条款。
+
+### 14.1 Objective
+
+构建 IoT 平台管理控制台 SPA，与后端 Express（同源、端口 3000）配套使用。
+
+- **用户角色**：租户管理员（看/管本租户设备、用户、区域、告警）、运维（看仪表盘 + 告警，不写）
+- **成功定义**：
+  1. 未登录访问任何受保护路由 → 重定向 `/login`
+  2. 登录后 6 个页面（Login / Dashboard / Devices / DeviceDetail / Users / Areas / Alerts）**全部可点开可操作**
+  3. 所有写操作（POST/PUT/DELETE）能在 5s 内通过 WebSocket `task_result` 收到成功/失败反馈
+  4. Dashboard 设备状态/告警数/趋势图在设备上报后 3s 内反映
+  5. WS 断线 30s 内指数退避重连，UI 显示"实时连接已断开"
+  6. 401 触发自动 refresh 一次，失败则跳登录
+
+### 14.2 Tech Stack
+
+| 组件 | 选型 | 锁定原因 |
+|------|------|----------|
+| 语言 | Vanilla JS (ES2022) + ES Modules | 与 §4.1 / §6.2 一致；不引入运行时依赖 |
+| HTTP | Fetch API（无 wrapper 库） | 原生 |
+| 实时 | 原生 WebSocket | 与后端 `RealtimePusher` 直连 |
+| 图表 | Chart.js 4.4 | package.json 已锁 |
+| 状态 | **自研轻量 store**：`EventTarget` 实现的发布订阅，约 50 行，零依赖 | 用户决策（spec 提问项 4） |
+| 路由 | **History API**（`pushState` + `popstate`），后端 SPA fallback 已就绪 | hash router 在相对路径托管下不优雅 |
+| 样式 | 原生 CSS（拆 `main.css` / `components.css` / `pages.css`） | 不引 Tailwind/PostCSS |
+| Lint | ESLint 9 flat config + `eslint:recommended` + 自定义 rules | 零构建约束下能跑的唯一质量门 |
+| Test | `node --test`（node 18+ 原生）+ 纯 ESM | 无需 Jest/Vitest |
+| 包管理 | npm（与 backend 一致） | 不引入 pnpm/yarn |
+
+> 显式**不引入**：React、Vue、Svelte、TypeScript、Vite、Webpack、Babel、Axios、Tailwind、Jest、Vitest、Moment。
+
+### 14.3 Commands
+
+`frontend/package.json` 新增以下 scripts（按需扩展，禁止引入新工具）：
+
+```jsonc
+{
+  "scripts": {
+    "start":  "echo 'Static files served by backend Express server'",
+    "lint":   "eslint scripts/",
+    "test":   "node --test test/",
+    "dev":    "echo 'Open http://localhost:3000 (start backend first)'"
+  }
+}
+```
+
+执行约定：
+
+| 场景 | 命令 |
+|------|------|
+| 启动整套应用 | `cd backend && npm start`（同时托管 frontend 静态文件） |
+| 前端单独检查 | `cd frontend && npm run lint` |
+| 前端单测 | `cd frontend && npm test` |
+| 访问入口 | `http://localhost:3000/` |
+
+### 14.4 Project Structure
+
+在 §4.1 既有目录之上**新增**四个目录（其余保持）：
+
+```
+frontend/
+├── index.html                # 单页 HTML，挂载点 #app
+├── styles/
+│   ├── main.css              # reset + 全局变量（CSS custom properties）
+│   ├── components.css        # Header/Sidebar/Modal/Chart 组件样式
+│   └── pages.css             # Login/Dashboard/... 页面级样式
+├── scripts/
+│   ├── app.js                # 应用入口：boot router + ws + store
+│   ├── config.js             # API_BASE_URL / TOKEN_KEY / WS_URL
+│   ├── router/
+│   │   ├── index.js          # History API 路由注册与匹配
+│   │   └── guards.js         # auth guard、role guard
+│   ├── store/
+│   │   ├── index.js          # createStore()：EventTarget 实现
+│   │   └── slices/
+│   │       ├── auth.js       # {user, accessToken, refreshToken}
+│   │       ├── devices.js    # 设备列表 + 选中设备
+│   │       ├── alerts.js     # 活跃告警 + 规则
+│   │       └── ui.js         # toast、modal、connection 状态
+│   ├── ws/
+│   │   └── client.js         # WebSocket 客户端：连接/重连/订阅/分发
+│   ├── api/                  # §4.1 已规划
+│   │   ├── client.js         # fetch 封装：自动 JWT、401 自动 refresh
+│   │   ├── auth.js
+│   │   ├── devices.js
+│   │   ├── users.js
+│   │   ├── areas.js
+│   │   ├── alerts.js
+│   │   └── dashboard.js
+│   ├── services/             # §4.1 已规划
+│   │   ├── AuthService.js
+│   │   ├── DeviceService.js
+│   │   └── AlertService.js
+│   ├── components/           # §4.1 已规划
+│   ├── pages/                # §4.1 已规划（7 个页面模块）
+│   └── utils/
+│       ├── storage.js        # localStorage + 内存双层封装
+│       ├── date.js           # ISO → "YYYY-MM-DD HH:mm"
+│       ├── chart.js          # Chart.js 包装：destroy + 重绘
+│       └── dom.js            # h(tag, props, children) 极简 helper
+├── test/                     # 单元测试（node --test 入口）
+│   ├── store.test.js
+│   ├── router.test.js
+│   ├── api.client.test.js
+│   ├── ws.client.test.js
+│   └── services.auth.test.js
+└── assets/
+    └── images/
+```
+
+文件粒度约束：单文件 ≤ 250 行；超过则按职责拆分（如 `api/devices.list.js` / `api/devices.crud.js`）。
+
+### 14.5 Code Style
+
+风格锁定为 **ES Modules + 显式命名导出 + 不可变状态**。所有风格由 ESLint 规则机器化执行。
+
+**模块示例**（`scripts/api/devices.js`）：
+
+```javascript
+import { request } from './client.js';
+import { CONFIG } from '../config.js';
+
+const BASE = `${CONFIG.API_BASE_URL}/devices`;
+
+export async function listDevices({ areaId, status, page = 1, pageSize = 20 } = {}) {
+  const qs = new URLSearchParams();
+  if (areaId) qs.set('areaId', areaId);
+  if (status) qs.set('status', status);
+  qs.set('page', page);
+  qs.set('pageSize', pageSize);
+  return request(`${BASE}?${qs}`);
+}
+
+export async function createDevice(payload) {
+  return request(BASE, { method: 'POST', body: payload });
+}
+
+export function subscribeDeviceUpdates(onUpdate) {
+  // 返回 unsubscribe 函数，调用方负责释放
+  return (addEventListener) => addEventListener('device_data', onUpdate);
+}
+```
+
+**Store 示例**（`scripts/store/index.js`）：
+
+```javascript
+export function createStore(initialState) {
+  let state = Object.freeze({ ...initialState });
+  const target = new EventTarget();
+
+  return {
+    get: () => state,
+    set: (patch) => {
+      state = Object.freeze({ ...state, ...patch });
+      target.dispatchEvent(new CustomEvent('change', { detail: state }));
+    },
+    subscribe: (fn) => {
+      const handler = (e) => fn(e.detail);
+      target.addEventListener('change', handler);
+      return () => target.removeEventListener('change', handler);
+    },
+  };
+}
+```
+
+**风格硬规则**（ESLint enforce）：
+- 引号：单引号；缩进：4 空格；行宽：100；分号：不写
+- 命名：函数/变量 `camelCase`、类 `PascalCase`、常量 `UPPER_SNAKE`
+- 模块：每个文件 ≤ 1 个默认导出 + N 个命名导出；无副作用 `import`
+- 错误：API 层**只**抛 `Error`，附带 `code: 'HTTP_4XX' | 'HTTP_5XX' | 'NETWORK' | 'WS'`
+- 注释：JSDoc 标注公开 API；业务逻辑内联 `// why`，不写 `// what`
+- DOM 操作：通过 `utils/dom.js` 的 `h()` 构造；不引入 template literal 直拼 HTML 防 XSS
+
+### 14.6 Testing Strategy
+
+| 层级 | 工具 | 覆盖目标 | 位置 |
+|------|------|----------|------|
+| 单元 | `node --test` | store / router / api client / utils | `frontend/test/*.test.js` |
+| 组件 smoke | `node --test` + JSDOM 24 | components/pages 渲染快照（轻量） | `frontend/test/components/*.test.js` |
+| 集成 | 浏览器手测 + 截图 | 6 个页面全流程 | `docs/manual-test-checklist.md` |
+| E2E | **不在 Phase 5 范围** | — | Phase 6 |
+
+**覆盖目标**：
+- store / router / api client：单测覆盖率 ≥ 80%（lines）
+- pages：至少 1 个 smoke 测试断言挂载点存在
+- ws client：注入 mock `WebSocket`，断言重连退避序列 `1s, 2s, 4s, 8s, max 30s`
+
+**测试与生产代码比**：保持 ≤ 1:3。**不**为每个 helper 写测试；只为状态机/边界条件写测试。
+
+**手动验收清单**（`docs/manual-test-checklist.md`，实施时建立）：
+- 登录 → Dashboard 自动加载设备统计
+- 创建设备 → 后端 202 → WS 推回 `task_result success` → 列表自动出现
+- 强制 kill 后端 → 30s 内 WS 显示"已断开"，重连后状态自动恢复
+- 401 → 自动 refresh 一次 → 失败跳登录
+
+### 14.7 Boundaries
+
+**Always do**
+- 所有 API 调用走 `api/client.js`，不在组件内直接 `fetch`
+- 所有写操作通过 WebSocket 等 `task_result` 才算完成；UI 必须显示"处理中"态
+- 所有用户输入在写入 DOM 前经 `utils/dom.js` 的文本节点路径，禁止 `innerHTML` 拼接
+- 提交前 `npm run lint && npm test` 全绿
+- 路由变化触发 `popstate` 时必须 `e.preventDefault()` 阻止默认行为并调用 `router.go()`
+- ESM 路径**必须**以 `./` 或 `../` 开头；禁止裸 specifier
+
+**Ask first**
+- 引入任何新 npm 依赖（即使是 devDependency）
+- 修改 `frontend/index.html` 中挂载点或模块入口顺序
+- 改 `config.js` 的 key 命名（影响 storage 向后兼容）
+- 改 WebSocket 消息协议（与后端 `RealtimePusher` 耦合）
+- 把 `services/` 改成默认导出
+
+**Never do**
+- 不引入框架/构建工具/TypeScript
+- 不在 `frontend/` 下 `node_modules` 之外放运行时 npm 包
+- 不在 `api/client.js` 外发起 XHR/fetch
+- 不修改 `backend/src/**`（后端由独立任务集管理）
+- 不删除既有测试用例；如要废弃，先标 `.skip` 并在 PR 描述解释
+- 不在前端代码中硬编码后端地址、端口、租户 id
+- 不把 `accessToken` / `refreshToken` 写入 console / 异常 message
+- 不绕过 `router/guards.js` 渲染受保护页面
+
+### 14.8 Implementation Order（高层）
+
+```
+14.8.1 基础设施  ─  config.js, store, router, ws/client, api/client
+14.8.2 工具层    ─  utils/{storage,date,chart,dom}
+14.8.3 鉴权闭环  ─  AuthService + Login 页 + guards
+14.8.4 Devices   ─  DeviceService + DeviceList + DeviceDetail
+14.8.5 Dashboard ─  DashboardService + Dashboard 页 + 实时
+14.8.6 Users     ─  UserService + UserManagement
+14.8.7 Areas     ─  AreaService + AreaManagement (含树)
+14.8.8 Alerts    ─  AlertService + AlertManagement
+14.8.9 收尾      ─  手动验收清单 + 全量 lint/test 通过
+```
+
+依赖：14.8.1 必先于一切；14.8.3 必先于 14.8.4–14.8.8；14.8.4 / 14.8.5 / 14.8.6 / 14.8.7 / 14.8.8 彼此独立可并行开发。
+
+### 14.9 Open Questions
+
+> 这些问题需在 Phase 5 实施过程中边做边收敛，不阻塞 §14.1 起步。
+
+1. **后端 WS 鉴权**：当前 `RealtimePusher` 是否要求 WS 握手时携带 JWT？（backend `WebSocketServer` 文档未明）
+   - 若需要：`ws/client.js` 在 `new WebSocket(url + '?token=...')` 或 `Sec-WebSocket-Protocol` 头携带
+   - 若不需要：保持纯匿名（**风险**：跨租户串数据）
+2. **refresh token 存放**：HttpOnly cookie（推荐）vs localStorage
+   - 当前 `config.js` 已用 `localStorage`，需与后端 `auth.js` route 对齐
+3. **角色与权限**：管理员 / 运维两级是否在后端 `JWT.claims.role` 体现？前端 `guards.js` 据此隐藏写操作
+4. **i18n**：是否需要中英双语？当前所有提示文案是中文
+5. **告警声音/桌面通知**：是否需要？默认关闭，需在 settings 显式开启
+
+### 14.10 Success Criteria（可测）
+
+| # | 条件 | 验证方式 |
+|---|------|----------|
+| SC-1 | `npm run lint` 0 error / 0 warning | CI |
+| SC-2 | `npm test` 全绿，覆盖率 ≥ 80% | CI |
+| SC-3 | 6 个页面均能在登录后无报错渲染 | 手动清单 + 浏览器 console 干净 |
+| SC-4 | 创建/更新/删除设备在 WS 推回后列表实时更新 | 手动 |
+| SC-5 | 401 → 自动 refresh 一次；二次 401 → 跳登录 | 手动 + 单测（mock 401） |
+| SC-6 | WS 断网 30s 内重连，UI 显示"连接已断开" | 手动：DevTools Offline |
+| SC-7 | 任意页面 F12 无未捕获异常、无 404 资源 | 手动 |
+| SC-8 | 所有用户输入不可触发 XSS（无 `innerHTML` 拼接） | ESLint 规则 + code review |
+
+> **毕设范围说明（v1.3.1）**：本节原列目标按生产级前端设计，实际毕设交付范围以 `tasks/plan-phase5-frontend.md` 和 `tasks/todo-phase5-frontend.md` 为准 —— 简化为 3 个页面（Login / Devices / Dashboard）、无单测、无 ESLint、hash 路由、WS 单次重连。§14.1–14.10 作为设计参考保留，不强制全量实现。
