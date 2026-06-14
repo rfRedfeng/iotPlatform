@@ -24,6 +24,15 @@ function handleAuthFailure(reason) {
 }
 
 async function request(path, opts = {}) {
+    // admin 切换租户时,自动在所有 API 请求上追加 ?tenantId=X
+    const tid = getState().selectedTenantId;
+    let urlPath = path;
+    if (tid && !path.includes('tenantId=') && !path.startsWith('/auth/')) {
+        const sep = path.includes('?') ? '&' : '?';
+        urlPath = path + sep + 'tenantId=' + tid;
+        console.log('[api] 跨租户请求:', urlPath);
+    }
+
     const headers = {
         'Content-Type': 'application/json',
         ...(opts.headers || {}),
@@ -40,7 +49,7 @@ async function request(path, opts = {}) {
 
     let res;
     try {
-        res = await fetch(BASE + path, init);
+        res = await fetch(BASE + urlPath, init);
     } catch (e) {
         const err = new Error('NETWORK_ERROR: ' + e.message);
         err.code = 'NETWORK';
@@ -53,7 +62,7 @@ async function request(path, opts = {}) {
         }
         const refreshed = await tryRefresh();
         if (refreshed) {
-            return request(path, { ...opts, _retried: true });
+            return request(urlPath, { ...opts, _retried: true });
         }
         handleAuthFailure('401 + refresh 失败');
         const err = new Error('AUTH_FAILED');
@@ -146,9 +155,11 @@ export const api = {
     createDevice: (payload) => request('/devices', { method: 'POST', body: payload }),
     updateDevice: (id, payload) => request('/devices/' + encodeURIComponent(id), { method: 'PUT', body: payload }),
     deleteDevice: (id) => request('/devices/' + encodeURIComponent(id), { method: 'DELETE' }),
+    regenerateDeviceSecret: (id) => request('/devices/' + encodeURIComponent(id) + '/regenerate-secret', { method: 'POST' }),
 
     // 用户
     listUsers: () => request('/users'),
+    createUser: (payload) => request('/users', { method: 'POST', body: payload }),
     updateUser: (id, payload) => request('/users/' + encodeURIComponent(id), { method: 'PUT', body: payload }),
     deleteUser: (id) => request('/users/' + encodeURIComponent(id), { method: 'DELETE' }),
 
@@ -157,6 +168,13 @@ export const api = {
         const qs = areaId ? '?areaId=' + areaId : '';
         return request('/dashboard/summary' + qs);
     },
+
+    // 租户
+    listTenants: () => request('/tenants'),
+    createTenant: (payload) => request('/tenants', { method: 'POST', body: payload }),
+    updateTenant: (id, payload) => request('/tenants/' + encodeURIComponent(id), { method: 'PUT', body: payload }),
+    deleteTenant: (id) => request('/tenants/' + encodeURIComponent(id), { method: 'DELETE' }),
+
     // 后端要 deviceId, metric, startTime, endTime; 缺一返 400
     getDashboardTrends: (deviceId, metric, startTime, endTime, interval = '1h') => {
         const qs = new URLSearchParams({

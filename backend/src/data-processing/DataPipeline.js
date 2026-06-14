@@ -68,8 +68,8 @@ class DataPipeline {
         if (triggered) {
           await AlertCache.setAlertEvent(deviceId, ruleId);
           alertnum++;
-          // 推送告警到前端
-          await RealtimePusher.pushAlert(tenantId, { deviceId, ruleId });
+          // ★ 不在这里 pushAlert —— RuleEvaluator.triggerAlert() 已通过 Notifier 推送
+          // 此处只负责 Redis 计数,避免重复推送
         }
       }
       if (alertnum > 0) {

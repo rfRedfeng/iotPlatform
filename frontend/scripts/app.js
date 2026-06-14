@@ -16,16 +16,26 @@ import { render as renderDevices } from './pages/devices.js';
 import { render as renderDeviceDetail } from './pages/device-detail.js';
 import { render as renderDashboard } from './pages/dashboard.js';
 import { render as renderUsers } from './pages/users.js';
+import { render as renderAreas } from './pages/areas.js';
+import { render as renderTenants } from './pages/tenants.js';
 
-console.log('[I8] boot');
+import { api } from './api.js';
 
-// 1) 恢复登录态
+console.log('[app] Starting application...');
+
+// 1) 恢复登录态 + 预加载用户信息
 const savedToken = storage.get('accessToken');
 const savedRefresh = storage.get('refreshToken');
 if (savedToken) {
     setState({ accessToken: savedToken, refreshToken: savedRefresh });
-    console.log('[I8] restored token from localStorage');
+    console.log('[app] restored token from localStorage');
     connectWs();
+    // 预加载 user/tenant 信息,让 header/nav 等组件能立即显示
+    api.userInfo().then(data => {
+        setState({ user: data.user, tenant: data.tenant });
+    }).catch(() => {
+        // 401/404 由 api.js 的 handleAuthFailure 处理
+    });
 }
 
 // 2) 注册路由
@@ -34,6 +44,8 @@ route('/login', renderLogin);
 route('/', renderHome);
 route('/devices', renderDevices);
 route('/devices/:id', renderDeviceDetail);
+route('/areas', renderAreas);
+route('/tenants', renderTenants);
 route('/users', renderUsers);
 route('/dashboard', renderDashboard);
 

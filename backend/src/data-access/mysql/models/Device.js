@@ -20,7 +20,7 @@ const Device = {
   insertableFields: ['tenantId', 'areaId', 'name', 'deviceKey', 'deviceSecret', 'protocol', 'deviceType', 'status', 'lastSeen', 'metadata'],
 
   // 允许更新的字段
-  updatableFields: ['areaId', 'name', 'deviceKey', 'protocol', 'deviceSecret', 'deviceType', 'status', 'lastSeen', 'metadata']
+  updatableFields: ['areaId', 'name', 'deviceKey', 'deviceSecret', 'protocol', 'deviceType', 'status', 'lastSeen', 'metadata']
 
 }
 

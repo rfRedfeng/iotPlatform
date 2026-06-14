@@ -62,15 +62,16 @@ class RealtimePusher {
   }
 
   /**
-   * 向指定租户的所有客户端推送消息
+   * 向指定租户的所有客户端推送消息，返回推送到的客户端数量。
    * @param {number} tenantId - 租户ID
    * @param {object} payload - 推送数据
+   * @returns {Promise<number>} 推送到的客户端数
    */
   async pushToTenant(tenantId, payload) {
-    if (!this.server) return;
-    if (tenantId === undefined || tenantId === null) return;
+    if (!this.server) return 0;
+    if (tenantId === undefined || tenantId === null) return 0;
     const tenantClients = this.clients.get(tenantId);
-    if (!tenantClients) return;
+    if (!tenantClients) return 0;
 
     const message = JSON.stringify(payload);
     const deadClients = [];
@@ -90,6 +91,7 @@ class RealtimePusher {
 
     // 清理无效连接
     deadClients.forEach(c => tenantClients.delete(c));
+    return tenantClients.size;
   }
 
   /**
@@ -148,9 +150,6 @@ class RealtimePusher {
 
   /**
    * 推送异步任务处理结果
-   * @param {number} tenantId - 租户ID
-   * @param {string} taskId - 任务ID
-   * @param {object} result - 任务处理结果 { status, data, error }
    */
   async pushTaskResult(tenantId, taskId, result) {
     const payload = {
@@ -161,7 +160,10 @@ class RealtimePusher {
     if (result && typeof result === 'object') {
       Object.assign(payload, result);
     }
-    await this.pushToTenant(tenantId, payload);
+    const count = await this.pushToTenant(tenantId, payload);
+    if (count === 0) {
+      console.warn(`[RealtimePusher] pushTaskResult: tenant=${tenantId} 没有在线客户端,消息未送达`);
+    }
   }
 }
 

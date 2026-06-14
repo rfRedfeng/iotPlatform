@@ -23,7 +23,6 @@ export function render(root) {
     const treeContainer = h('div', { id: 'areas-tree' });
     const toolbar = h('div', { style: { display: 'flex', gap: '0.5rem', marginBottom: '1rem' } }, [
         h('button', { id: 'create-root-btn', style: { padding: '0.4rem 0.8rem' } }, '＋ 新建根区域'),
-        h('button', { id: 'create-child-btn', style: { padding: '0.4rem 0.8rem' } }, '＋ 新建子区域'),
         h('button', { id: 'refresh-btn', style: { padding: '0.4rem 0.8rem' } }, '🔄 刷新'),
     ]);
 
@@ -100,7 +99,7 @@ export function render(root) {
             'data-area-id': String(node.id),
             style: {
                 marginLeft: (depth * 24) + 'px',
-                padding: '0.5rem',
+                padding: '0.5rem 0rem',
                 borderLeft: depth > 0 ? '2px solid #3498db' : 'none',
                 marginBottom: '0.25rem',
             },
@@ -270,28 +269,28 @@ export function render(root) {
 
     // 事件
     main.querySelector('#create-root-btn').addEventListener('click', onAddRoot);
-    main.querySelector('#create-child-btn').addEventListener('click', () => {
-        alert('请在树形中点某区域的"＋ 子区域"按钮,或点上方"新建根区域"');
-    });
     main.querySelector('#refresh-btn').addEventListener('click', loadAreas);
 
     // 首次加载
     repaintTree();
     loadAreas();
 
-    // WS 监听 task_result:area 变化后重拉
+    // WS 监听 task_result:area 变化后重拉(用 msg.taskType 区分)
     const offWs = onWs('task_result', (msg) => {
-        if (msg.status === 'success' && msg.data && (
-            msg.data.type === 'area.create' ||
-            msg.data.type === 'area.update' ||
-            msg.data.type === 'area.delete'
-        )) {
-            console.log('[areas] task_result received, reloading');
+        if (msg.status === 'success' && msg.taskType && msg.taskType.startsWith('area.')) {
+            console.log('[areas] task_result received:', msg.taskType, '- reloading');
             loadAreas();
         }
     });
 
-    const unsubscribe = subscribe(() => repaintTree());
+    let lastTenantId = getState().selectedTenantId;
+    const unsubscribe = subscribe((state) => {
+        repaintTree();
+        if (state.selectedTenantId !== lastTenantId) {
+            lastTenantId = state.selectedTenantId;
+            loadAreas();
+        }
+    });
 
     return () => {
         unsubscribe();

@@ -15,6 +15,7 @@ import userRoutes from './users.js';
 import areaRoutes from './areas.js';
 import alertRoutes from './alerts.js';
 import dashboardRoutes from './dashboard.js';
+import tenantRoutes from './tenants.js';
 
 const router = express.Router();
 
@@ -27,7 +28,8 @@ const protectedRoutes = [
   { path: '/users', router: userRoutes },
   { path: '/areas', router: areaRoutes },
   { path: '/alerts', router: alertRoutes },
-  { path: '/dashboard', router: dashboardRoutes }
+  { path: '/dashboard', router: dashboardRoutes },
+  { path: '/tenants', router: tenantRoutes }
 ];
 
 protectedRoutes.forEach(({ path, router: subRouter }) => {

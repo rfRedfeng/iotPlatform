@@ -148,6 +148,29 @@ router.put('/:id', async (req, res, next) => {
 });
 
 /**
+ * POST /api/devices/:id/regenerate-secret
+ * 重新生成 deviceSecret（异步队列 → 202）
+ */
+router.post('/:id/regenerate-secret', async (req, res, next) => {
+  try {
+    const deviceId = parseInt(req.params.id);
+    const taskId = crypto.randomUUID();
+    const task = {
+      id: taskId,
+      type: 'device.regenerate-secret',
+      payload: { deviceId },
+      tenantId: req.tenantId,
+      userId: req.user.userId,
+      timestamp: new Date().toISOString()
+    };
+    await CacheManager.enqueue('task:queue', JSON.stringify(task));
+    res.status(202).json({ success: true, taskId });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * DELETE /api/devices/:id
  * 删除设备（异步队列 → 202）
  */

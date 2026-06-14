@@ -1,27 +1,26 @@
 // scripts/components/navigation.js — 侧边导航
-//
-// 用于所有受保护页面（home / devices / device-detail / dashboard）,
-// 不在 /login 公开页用。
-//
-// 行为：
-//   - 链接以 hash 形式写出,onclick 阻止默认跳转并调 go(path) 走 router
-//   - 当前页 li 加 .active 类,CSS 蓝底高亮
-//   - 鼠标悬停 li → CSS 灰底 + 微右移
 
 import { h } from '../utils.js';
+import { getState, subscribe } from '../state.js';
 import { go } from '../router.js';
 
-const ITEMS = [
-    { path: '/', icon: '🏠', label: '首页' },
-    { path: '/users', icon: '👥', label: '用户管理' },
-    { path: '/devices', icon: '📡', label: '设备列表' },
+const ALL_ITEMS = [
+    { path: '/',           icon: '🏠', label: '首页' },
+    { path: '/devices',   icon: '📡', label: '设备列表' },
+    { path: '/areas',     icon: '🏢', label: '区域管理' },
     { path: '/dashboard', icon: '📊', label: '仪表盘' },
+    { path: '/users',     icon: '👥', label: '用户管理' },
+    { path: '/tenants',   icon: '🏛', label: '租户管理', adminOnly: true },
 ];
 
-/** 当前 hash 匹配的导航项（最长前缀匹配） */
+function visibleItems() {
+    const role = (getState().user || {}).role;
+    return ALL_ITEMS.filter(item => !item.adminOnly || role === 'admin');
+}
+
 function activePath() {
     const cur = location.hash.slice(1) || '/';
-    const match = ITEMS
+    const match = visibleItems()
         .filter(it => cur === it.path || cur.startsWith(it.path + '/'))
         .sort((a, b) => b.path.length - a.path.length)[0];
     return match?.path || null;
@@ -29,24 +28,41 @@ function activePath() {
 
 export function navigation() {
     const active = activePath();
+    const items = visibleItems();
 
-    return h('nav', { class: 'nav' }, [
-        h('ul', null,
-            ITEMS.map(item => {
-                const isActive = item.path === active;
-                return h('li', isActive ? { class: 'active' } : null, [
-                    h('a', {
-                        href: '#' + item.path,
-                        onclick: (e) => {
-                            e.preventDefault();
-                            go(item.path);
-                        },
-                    }, [
-                        h('span', { class: 'icon' }, item.icon),
-                        h('span', { class: 'label' }, item.label),
-                    ]),
-                ]);
-            })
-        ),
-    ]);
+    let currentUl = buildUl(items, active);
+
+    const nav = h('nav', { class: 'nav' }, [currentUl]);
+
+    // 订阅 state 变化：user 加载后重新渲染导航项
+    const off = subscribe(() => {
+        const newActive = activePath();
+        const newItems = visibleItems();
+        const newUl = buildUl(newItems, newActive);
+        currentUl.replaceWith(newUl);
+        currentUl = newUl;
+    });
+
+    nav._cleanup = off;
+    return nav;
+}
+
+function buildUl(items, active) {
+    return h('ul', null,
+        items.map(item => {
+            const isActive = item.path === active;
+            return h('li', isActive ? { class: 'active' } : null, [
+                h('a', {
+                    href: '#' + item.path,
+                    onclick: (e) => {
+                        e.preventDefault();
+                        go(item.path);
+                    },
+                }, [
+                    h('span', { class: 'icon' }, item.icon),
+                    h('span', { class: 'label' }, item.label),
+                ]),
+            ]);
+        })
+    );
 }

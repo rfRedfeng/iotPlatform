@@ -14,13 +14,17 @@ const state = {
     alertCount: 0,               // 未确认告警数
     userLoading: false,          // /auth/userinfo 加载状态
     userError: null,             // /auth/userinfo 错误信息
-    users: [],                   // 用户列表（仅 admin 可见）
+    users: [],                   // 用户列表（admin/manager 可见）
     usersLoading: false,
     usersError: null,
+    tenants: [],                 // 租户列表
+    tenantsLoading: false,
+    tenantsError: null,
     areas: [],                   // I10: 区域列表（平铺）
     areasTree: [],              // I10: 区域树形结构
     areasLoading: false,
     selectedAreaId: null,        // I10: 仪表盘当前选中的区域（null = 全部）
+    selectedTenantId: null,      // admin 切换查看的租户（null = 自己）
 };
 
 const subs = new Set();

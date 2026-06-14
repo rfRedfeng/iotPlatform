@@ -127,8 +127,27 @@ export async function deleteDevice(payload, task) {
   return result;
 }
 
+// ========== 重新生成 deviceSecret ==========
+
+export async function regenerateDeviceSecret(payload, task) {
+  const { deviceId } = payload;
+  const tenantId = task.tenantId;
+
+  const existing = await DeviceRepository.findById(deviceId);
+  if (!existing || existing.tenantId !== tenantId) {
+    throw new Error('Device not found');
+  }
+
+  const { deviceSecret } = generateDeviceCredentials();
+  await DeviceRepository.update(deviceId, { deviceSecret });
+  await _invalidateCache(deviceId);
+
+  return { deviceId, deviceSecret };
+}
+
 // ========== Worker 任务处理器注册 ==========
 
 registerHandler('device.create', createDevice);
 registerHandler('device.update', updateDevice);
 registerHandler('device.delete', deleteDevice);
+registerHandler('device.regenerate-secret', regenerateDeviceSecret);

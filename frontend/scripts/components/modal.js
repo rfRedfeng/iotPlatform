@@ -73,8 +73,14 @@ export function openModal({ title = '', content = null, onClose = null, width = 
         if (e.key === 'Escape') close();
     }
 
+    // 点击遮罩关闭:只有 mousedown 和 mouseup 都在 overlay 上才关
+    // (修复:鼠标在 modal 内操作时移出不会误关)
+    let clickStartedOnOverlay = false;
+    overlay.addEventListener('mousedown', (e) => {
+        clickStartedOnOverlay = (e.target === overlay);
+    });
     overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) close();   // 点击遮罩关闭,点击 modal 内部不关
+        if (e.target === overlay && clickStartedOnOverlay) close();
     });
     document.addEventListener('keydown', onKeyDown);
 

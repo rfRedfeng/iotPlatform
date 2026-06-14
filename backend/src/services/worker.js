@@ -74,11 +74,20 @@ async function _runLoop() {
 
       try {
         const resultData = await handler(task.payload, task);
-        await _writeResult(task.id, task.tenantId, { status: 'success', data: resultData });
+        // taskType 让前端能区分是哪类任务的完成（area.create / device.update 等）
+        await _writeResult(task.id, task.tenantId, {
+          status: 'success',
+          taskType: task.type,
+          data: resultData
+        });
       } catch (err) {
         // console.error(`[Worker] 监听任务错误 ${task.id}:`, err.message);
         // console.error(`[Worker] 错误堆栈:`, err.stack);
-        await _writeResult(task.id, task.tenantId, { status: 'failed', error: { message: err.message } });
+        await _writeResult(task.id, task.tenantId, {
+          status: 'failed',
+          taskType: task.type,
+          error: { message: err.message }
+        });
       }
     } catch (err) {
       console.error('[Worker] 队列错误:', err.message);
@@ -98,7 +107,10 @@ async function _writeResult(taskId, tenantId, result) {
   try {
     await CacheManager.set(`task:result:${taskId}`, JSON.stringify(result), RESULT_TTL);
     if (tenantId !== undefined && tenantId !== null) {
+      console.log(`[Worker] 推送结果 taskId=${taskId} tenantId=${tenantId} status=${result.status} taskType=${result.taskType}`);
       RealtimePusher.pushTaskResult(tenantId, taskId, result);
+    } else {
+      console.warn(`[Worker] 跳过推送: tenantId 为空 taskId=${taskId}`);
     }
   } catch (err) {
     console.error('[Worker] 写入结果失败:', err.message);

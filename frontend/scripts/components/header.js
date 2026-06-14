@@ -1,102 +1,136 @@
-// scripts/components/header.js — I4 引入
-//
-// 受保护页面的公共头部。
-// 行为：
-//   - mount 一次：建 DOM（含用户名、WS 状态指示、登出按钮）
-//   - mount 一次：绑事件（登出按钮的 click）
-//   - subscribe：state 变化时只更新 WS 状态指示的局部（不重画整个 header）
-//   - 切页时 cleanup：取消订阅
-//
-// 返回 { element, cleanup } 给调用方（page 的 render 函数）
+// scripts/components/header.js — 受保护页面统一头部
+// I11: admin 可切换租户查看所有数据
 
 import { getState, setState, subscribe } from '../state.js';
 import { disconnect } from '../ws.js';
 import { storage, h } from '../utils.js';
 import { go } from '../router.js';
+import { api } from '../api.js';
 
-/**
- * 挂载头部到 root。返回 { element, cleanup }
- */
 export function mountHeader() {
-  // 1. 读初始状态
-  const user = getState().user;
-  const status = getState().wsStatus;
+    const user = getState().user;
+    const status = getState().wsStatus;
 
-  // 2. 一次建 DOM
-  const element = h('header', { class: 'header' }, [
-    h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' } }, [
-      h('h1', { style: { margin: '0' } }, 'IoT Cloud Platform'),
-      h('div', { style: { display: 'flex', alignItems: 'center', gap: '1rem' } }, [
-        h('span', {
-          id: 'ws-status',
-          style: { display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: colorFor(status) },
-        }, [
-          h('span', { style: { width: '10px', height: '10px', borderRadius: '50%', backgroundColor: colorFor(status), display: 'inline-block' } }),
-          textFor(status),
+    // 租户切换器（仅 admin,初始隐藏）
+    const tenantSelect = h('select', {
+        id: 'tenant-switcher',
+        style: { padding: '0.25rem 0.5rem', fontSize: '0.85rem', display: 'none' },
+    }, [h('option', { value: '' }, '我的租户')]);
+
+    // 用 addEventListener 确保事件可靠
+    tenantSelect.addEventListener('change', function () {
+        const v = this.value;
+        const tid = v ? Number(v) : null;
+        console.log('[header] 切换到租户:', tid);
+        setState({ selectedTenantId: tid });
+    });
+
+    const userSpan = h('span', {
+        id: 'user-name',
+        style: { fontSize: '0.9rem' },
+    }, user ? `欢迎, ${user.username}` : '');
+
+    const logoutBtn = h('button', {
+        id: 'logout-btn',
+        style: { padding: '0.25rem 0.75rem', display: user ? '' : 'none' },
+    }, '登出');
+
+    const element = h('header', { class: 'header' }, [
+        h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' } }, [
+            h('h1', { style: { margin: '0' } }, 'IoT Cloud Platform'),
+            h('div', { style: { display: 'flex', alignItems: 'center', gap: '1rem' } }, [
+                tenantSelect,
+                h('span', {
+                    id: 'ws-status',
+                    style: { display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: colorFor(status) },
+                }, [
+                    h('span', { style: { width: '10px', height: '10px', borderRadius: '50%', backgroundColor: colorFor(status), display: 'inline-block' } }),
+                    textFor(status),
+                ]),
+                userSpan,
+                logoutBtn,
+            ]),
         ]),
-        user ? h('span', { style: { fontSize: '0.9rem' } }, `欢迎, ${user.username}`) : null,
-        user ? h('button', { id: 'logout-btn', style: { padding: '0.25rem 0.75rem' } }, '登出') : null,
-      ]),
-    ]),
-  ]);
+    ]);
 
-  // 3. 一次绑事件（登出按钮）
-  const logoutBtn = element.querySelector('#logout-btn');
-  if (logoutBtn) {
     logoutBtn.addEventListener('click', handleLogout);
-  }
 
-  // 4. 订阅 state 变化 → 只更新 WS 指示
-  const unsubscribe = subscribe((state) => {
-    updateWsIndicator(element, state.wsStatus);
-  });
+    // 加载租户列表给 admin 切换用
+    loadTenantsForAdmin();
 
-  // 5. 返回给 page，cleanup 在切走时由 router 调
-  return {
-    element,
-    cleanup: () => {
-      unsubscribe();
-    },
-  };
+    const unsubscribe = subscribe((state) => {
+        updateWsIndicator(element, state.wsStatus);
+        // 用户信息变化
+        const u = state.user;
+        const nameEl = element.querySelector('#user-name');
+        const btn = element.querySelector('#logout-btn');
+        if (nameEl) nameEl.textContent = u ? `欢迎, ${u.username}` : '';
+        if (btn) btn.style.display = u ? '' : 'none';
+        // admin 显示/隐藏租户切换器 + 加载租户列表
+        const sel = element.querySelector('#tenant-switcher');
+        const isAdmin = u && u.role === 'admin';
+        if (sel) {
+            sel.style.display = isAdmin ? '' : 'none';
+            if (isAdmin && sel.options.length <= 1) loadTenantsForAdmin();
+        }
+    });
+
+    return {
+        element,
+        cleanup: () => unsubscribe(),
+    };
+
+    // ══════════ helpers ══════════
+
+    async function loadTenantsForAdmin() {
+        if (!getState().user || getState().user.role !== 'admin') return;
+        try {
+            const data = await api.listTenants();
+            const list = Array.isArray(data) ? data : [];
+            const sel = element.querySelector('#tenant-switcher');
+            if (!sel) return;
+            // 保留第一个 option（我的租户），追加租户列表
+            while (sel.options.length > 1) sel.remove(1);
+            list.forEach(t => {
+                sel.appendChild(h('option', { value: String(t.id) }, t.name));
+            });
+            // 恢复上次选择
+            const cur = getState().selectedTenantId;
+            if (cur) sel.value = String(cur);
+        } catch (e) {
+            console.warn('[header] load tenants failed', e);
+        }
+    }
 }
 
-/**
- * 局部更新：只改 WS 指示的颜色和文字
- */
-export function updateWsIndicator(element, status) {
-  const ind = element.querySelector('#ws-status');
-  if (!ind) return;
-  const color = colorFor(status);
-  ind.style.color = color;
-  // 内部的小圆点也更新颜色
-  const dot = ind.querySelector('span');
-  if (dot) dot.style.backgroundColor = color;
-  // 文字是 textNode,需要替换最后一段
-  ind.lastChild && ind.lastChild.nodeType === 3 && (ind.lastChild.nodeValue = textFor(status));
-  // 简化做法:重置所有 textNodes
-  ind.replaceChildren(
-    h('span', { style: { width: '10px', height: '10px', borderRadius: '50%', backgroundColor: color, display: 'inline-block' } }),
-    textFor(status),
-  );
+function updateWsIndicator(element, status) {
+    const ind = element.querySelector('#ws-status');
+    if (!ind) return;
+    const color = colorFor(status);
+    ind.style.color = color;
+    ind.replaceChildren(
+        h('span', { style: { width: '10px', height: '10px', borderRadius: '50%', backgroundColor: color, display: 'inline-block' } }),
+        textFor(status),
+    );
 }
 
 function colorFor(status) {
-  if (status === 'connected') return '#2ecc71';   // 绿
-  if (status === 'connecting') return '#f39c12';  // 黄
-  return '#e74c3c';                                // 红
+    if (status === 'connected') return '#2ecc71';
+    if (status === 'connecting') return '#f39c12';
+    return '#e74c3c';
 }
 
 function textFor(status) {
-  if (status === 'connected') return '实时已连接';
-  if (status === 'connecting') return '连接中';
-  return '实时已断开';
+    if (status === 'connected') return '实时已连接';
+    if (status === 'connecting') return '连接中';
+    return '实时已断开';
 }
 
 function handleLogout() {
-  setState({ user: null, accessToken: null, refreshToken: null });
-  storage.remove('accessToken');
-  storage.remove('refreshToken');
-  try { disconnect(); } catch (e) { console.warn('[logout] disconnect error', e); }
-  console.log('[logout] cleared');
-  go('/login');
+    setState({ user: null, accessToken: null, refreshToken: null, selectedTenantId: null });
+    storage.remove('accessToken');
+    storage.remove('refreshToken');
+    try { disconnect(); } catch (e) { console.warn('[logout] disconnect error', e); }
+    console.log('[logout] cleared');
+    go('/login');
 }

@@ -78,12 +78,16 @@ router.post('/', async (req, res, next) => {
     if (!username || !password) {
       return res.status(400).json({ success: false, error: { code: 400, message: 'username and password are required' } });
     }
+    // 管理员必须指定租户(admin 自身的 tenantId=0 不能作为默认值)
+    if (!tenantId && tenantId !== 0) {
+      return res.status(400).json({ success: false, error: { code: 400, message: '管理员创建用户必须指定 tenantId' } });
+    }
 
     const taskId = crypto.randomUUID();
     const task = {
       id: taskId,
       type: 'user.create',
-      payload: { username, password, role, email, tenantId },
+      payload: { username, password, role: role || 'user', email, tenantId },
       tenantId: req.tenantId,
       userId: req.user.userId,
       timestamp: new Date().toISOString()

@@ -63,7 +63,9 @@ class AlertEventRepository {
     const placeholders = fields.map(() => '?').join(', ');
     const query = `INSERT INTO ${AlertEvent.tableName} (${fields.join(', ')}) VALUES (${placeholders})`;
     const [result] = await pool.execute(query, values);
-    return result.insertId;
+    // 返回完整记录(不只 insertId),让 Notifier 能拿到所有字段
+    const created = await this.findById(result.insertId);
+    return created;
   }
 
   // 更新告警事件
