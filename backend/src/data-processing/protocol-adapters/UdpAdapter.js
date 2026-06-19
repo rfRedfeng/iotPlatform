@@ -1,9 +1,21 @@
 import dgram from 'dgram';
+import JsonParser from '../parsers/JsonParser.js';
 
 class UdpAdapter {
   constructor() {
     this.server = null;
     this.messageHandler = null;
+  }
+
+  // 使用 JsonParser 解析数据
+  static parseData(rawData) {
+    try {
+      const str = rawData instanceof Buffer ? rawData.toString('utf-8') : rawData;
+      return JsonParser.parse(str);
+    } catch (e) {
+      console.error('[UdpAdapter] JSON 解析失败:', e.message);
+      return null;
+    }
   }
 
   // 启动 UDP 服务器
@@ -18,7 +30,10 @@ class UdpAdapter {
 
       this.server.on('message', (data, rinfo) => {
         if (this.messageHandler) {
-          this.messageHandler(rinfo, data);
+          const parsed = UdpAdapter.parseData(data);
+          if (parsed) {
+            this.messageHandler(rinfo, parsed, data);
+          }
         }
       });
 
@@ -48,7 +63,6 @@ class UdpAdapter {
   }
 
   // 注册消息处理回调 (rinfo, data) => void
-  // rinfo: { address, family, port, size }
   onMessage(handler) {
     this.messageHandler = handler;
   }
@@ -74,4 +88,5 @@ class UdpAdapter {
   }
 }
 
+export { UdpAdapter };
 export default new UdpAdapter();

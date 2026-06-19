@@ -1,8 +1,21 @@
+import JsonParser from '../parsers/JsonParser.js';
+
 class CoapAdapter {
   constructor() {
     this.server = null;
     this.messageHandler = null;
     this.coap = null;
+  }
+
+  // 使用 JsonParser 解析数据
+  static parseData(rawData) {
+    try {
+      const str = rawData instanceof Buffer ? rawData.toString('utf-8') : rawData;
+      return JsonParser.parse(str);
+    } catch (e) {
+      console.error('[CoapAdapter] JSON 解析失败:', e.message);
+      return null;
+    }
   }
 
   // 初始化 CoAP 模块
@@ -27,24 +40,22 @@ class CoapAdapter {
     }
 
     return new Promise((resolve, reject) => {
-      // S-7: listen 失败时清 this.server,防止后续 close() 操作空对象
       const cleanup = () => { this.server = null; };
       try {
         this.server = this.coap.createServer((req, res) => {
           console.log(`CoAP ${req.method} request from ${req.url}`);
 
-          let data = req.payload;
+          const rawData = req.payload;
+          let parsed = rawData;
           if (req.options && req.options['Content-Format']) {
             const format = req.options['Content-Format'];
             if (format === 'application/json') {
-              try {
-                data = JSON.parse(data.toString());
-              } catch (e) { /* 解析失败保持原数据 */ }
+              parsed = CoapAdapter.parseData(rawData);
             }
           }
 
           if (this.messageHandler) {
-            this.messageHandler(req, res, data);
+            this.messageHandler(req, res, parsed, rawData);
           }
 
           res.end('OK');
@@ -85,7 +96,7 @@ class CoapAdapter {
     response.end(typeof payload === 'string' ? payload : JSON.stringify(payload));
   }
 
-  // 注册消息处理回调 (request, response, data) => void
+  // 注册消息处理回调 (request, response, parsedData, rawData) => void
   onMessage(handler) {
     this.messageHandler = handler;
   }
@@ -108,15 +119,9 @@ class CoapAdapter {
       });
 
       req.on('response', (res) => {
-        let data = res.payload;
-        if (res.options && res.options['Content-Format'] === 'application/json') {
-          try {
-            data = JSON.parse(data.toString());
-          } catch (e) {
-            console.error('Error parsing JSON:', e);
-          }
-        }
-        resolve({ statusCode: res.statusCode, payload: data, options: res.options });
+        const rawData = res.payload;
+        const parsed = CoapAdapter.parseData(rawData);
+        resolve({ statusCode: res.statusCode, payload: parsed, rawData, options: res.options });
       });
 
       req.on('error', (error) => {
@@ -147,4 +152,5 @@ class CoapAdapter {
   }
 }
 
+export { CoapAdapter };
 export default new CoapAdapter();

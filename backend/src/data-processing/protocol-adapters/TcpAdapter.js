@@ -1,4 +1,5 @@
 import net from 'net';
+import JsonParser from '../parsers/JsonParser.js';
 
 class TcpAdapter {
   constructor() {
@@ -6,6 +7,17 @@ class TcpAdapter {
     this.messageHandler = null;
     this.connectionHandler = null;
     this.clients = new Map();
+  }
+
+  // 使用 JsonParser 解析数据
+  static parseData(rawData) {
+    try {
+      const str = rawData instanceof Buffer ? rawData.toString('utf-8') : rawData;
+      return JsonParser.parse(str);
+    } catch (e) {
+      console.error('[TcpAdapter] JSON 解析失败:', e.message);
+      return null;
+    }
   }
 
   // 启动 TCP 服务器
@@ -26,7 +38,10 @@ class TcpAdapter {
         // 接收数据
         socket.on('data', (data) => {
           if (this.messageHandler) {
-            this.messageHandler(clientId, data);
+            const parsed = TcpAdapter.parseData(data);
+            if (parsed) {
+              this.messageHandler(clientId, parsed, data);
+            }
           }
         });
 
@@ -114,4 +129,5 @@ class TcpAdapter {
   }
 }
 
+export { TcpAdapter };
 export default new TcpAdapter();

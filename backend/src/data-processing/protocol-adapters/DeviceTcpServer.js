@@ -1,29 +1,11 @@
 /**
- * TCP 设备数据上报协议 v2.0 — JSON 格式
+ * TCP 设备数据上报协议 — 统一 JSON 格式
  *
- * ── 协议格式 (每行一个 JSON 对象, UTF-8) ──
- *
- * 1. 认证:
- *    C→S: {"type":"auth","key":"<deviceKey>","secret":"<deviceSecret>"}
- *    S→C: {"type":"auth_ok","deviceId":1,"tenantId":1}
- *    S→C: {"type":"error","code":"auth_failed","message":"key/secret 不匹配"}
- *
- * 2. 上报数据:
- *    C→S: {"type":"data","payload":{...指标数据...}}
- *    S→C: {"type":"ok"}
- *    S→C: {"type":"error","code":"not_authenticated","message":"请先认证"}
- *
- * 3. 心跳:
- *    C→S: {"type":"ping"}
- *    S→C: {"type":"pong"}
- *
- * ── 安全性 ──
- * - 仅 Device Key + Secret, 无 JWT
- * - 认证失败 3 次自动断开
- * - 未认证不能发数据
+ * 使用 JsonParser 统一解析所有设备数据
  */
 
 import net from 'net';
+import JsonParser from '../parsers/JsonParser.js';
 import DeviceRepository from '../../data-access/mysql/repositories/DeviceRepository.js';
 
 const DEFAULT_PORT = parseInt(process.env.TCP_DEVICE_PORT || '9000', 10);
@@ -37,6 +19,17 @@ class DeviceTcpServer {
   constructor() {
     this.server = null;
     this.dataHandler = null;
+  }
+
+  // 使用 JsonParser 解析数据
+  static parseData(rawData) {
+    try {
+      const str = rawData instanceof Buffer ? rawData.toString('utf-8') : rawData;
+      return JsonParser.parse(str);
+    } catch (e) {
+      console.error('[DeviceTcpServer] JSON 解析失败:', e.message);
+      return null;
+    }
   }
 
   onData(handler) { this.dataHandler = handler; }
@@ -59,71 +52,50 @@ class DeviceTcpServer {
           const line = raw.trim();
           if (!line) continue;
 
-          let msg;
-          try { msg = JSON.parse(line); } catch {
+          const parsed = DeviceTcpServer.parseData(line);
+          if (!parsed) {
             reply(socket, { type: 'error', code: 'invalid_json', message: 'JSON 解析失败' });
             continue;
           }
-          if (!msg || typeof msg !== 'object' || !msg.type) {
-            reply(socket, { type: 'error', code: 'invalid_format', message: '缺少 type 字段' });
+
+          // 简单的设备认证: 通过 deviceKey 和 deviceSecret
+          if (!device) {
+            // 首次消息需要包含认证信息
+            if (!parsed.deviceKey || !parsed.deviceSecret) {
+              reply(socket, { type: 'error', code: 'auth_required', message: '需要 deviceKey 和 deviceSecret' });
+              authFailures++;
+              if (authFailures >= MAX_AUTH_FAILURES) {
+                socket.end();
+              }
+              continue;
+            }
+
+            const dev = await this._authenticate(parsed.deviceKey, parsed.deviceSecret);
+            if (!dev) {
+              reply(socket, { type: 'error', code: 'auth_failed', message: 'deviceKey/deviceSecret 不匹配' });
+              authFailures++;
+              if (authFailures >= MAX_AUTH_FAILURES) {
+                socket.end();
+              }
+              continue;
+            }
+
+            device = dev;
+            authFailures = 0;
+            reply(socket, { type: 'auth_ok', deviceId: device.id, tenantId: device.tenantId });
+            console.log(`[DeviceTCP] ${remote} 认证通过: device=${device.id} tenant=${device.tenantId}`);
             continue;
           }
 
-          try {
-            switch (msg.type) {
-              case 'ping':
-                reply(socket, { type: 'pong' });
-                break;
-
-              case 'auth': {
-                if (!msg.key || !msg.secret) {
-                  reply(socket, { type: 'error', code: 'invalid_format', message: 'auth 需要 key 和 secret' });
-                  authFailures++;
-                  break;
-                }
-                const dev = await this._authenticate(msg.key, msg.secret);
-                if (!dev) {
-                  reply(socket, { type: 'error', code: 'auth_failed', message: 'key/secret 不匹配' });
-                  authFailures++;
-                  if (authFailures >= MAX_AUTH_FAILURES) {
-                    reply(socket, { type: 'error', code: 'too_many_failures', message: '认证失败次数过多,断开连接' });
-                    socket.end();
-                  }
-                  break;
-                }
-                device = dev;
-                authFailures = 0;
-                reply(socket, { type: 'auth_ok', deviceId: device.id, tenantId: device.tenantId });
-                console.log(`[DeviceTCP] ${remote} 认证通过: device=${device.id} tenant=${device.tenantId}`);
-                break;
-              }
-
-              case 'data': {
-                if (!device) {
-                  reply(socket, { type: 'error', code: 'not_authenticated', message: '请先发送 auth 认证' });
-                  break;
-                }
-                const payload = msg.payload;
-                if (!payload || typeof payload !== 'object') {
-                  reply(socket, { type: 'error', code: 'invalid_format', message: 'data 需要 payload 对象' });
-                  break;
-                }
-                if (this.dataHandler) {
-                  try { await this.dataHandler(device, payload, line); } catch (e) {
-                    console.error(`[DeviceTCP] handler error device=${device.id}:`, e.message);
-                  }
-                }
-                reply(socket, { type: 'ok' });
-                break;
-              }
-
-              default:
-                reply(socket, { type: 'error', code: 'unknown_type', message: `未知消息类型: ${msg.type}` });
+          // 认证后，parsed 直接作为 payload
+          if (this.dataHandler) {
+            try {
+              await this.dataHandler(device, parsed, line);
+            } catch (e) {
+              console.error(`[DeviceTCP] handler error device=${device.id}:`, e.message);
             }
-          } catch (e) {
-            console.error(`[DeviceTCP] ${remote} error:`, e.message);
-            reply(socket, { type: 'error', code: 'internal_error', message: e.message });
           }
+          reply(socket, { type: 'ok' });
         }
       });
 
@@ -155,4 +127,5 @@ class DeviceTcpServer {
   }
 }
 
+export { DeviceTcpServer };
 export default new DeviceTcpServer();

@@ -1,9 +1,21 @@
 import mqtt from 'mqtt';
+import JsonParser from '../parsers/JsonParser.js';
 
 class MqttAdapter {
   constructor() {
     this.client = null;
     this.messageHandler = null;
+  }
+
+  // 使用 JsonParser 解析数据
+  static parseData(rawData) {
+    try {
+      const str = typeof rawData === 'string' ? rawData : rawData.toString('utf-8');
+      return JsonParser.parse(str);
+    } catch (e) {
+      console.error('[MqttAdapter] JSON 解析失败:', e.message);
+      return null;
+    }
   }
 
   // 连接 MQTT Broker
@@ -30,7 +42,10 @@ class MqttAdapter {
 
       this.client.on('message', (topic, payload) => {
         if (this.messageHandler) {
-          this.messageHandler(topic, payload.toString());
+          const parsed = MqttAdapter.parseData(payload);
+          if (parsed) {
+            this.messageHandler(topic, parsed, payload.toString());
+          }
         }
       });
 
@@ -128,4 +143,5 @@ class MqttAdapter {
   }
 }
 
+export { MqttAdapter };
 export default new MqttAdapter();
