@@ -10,13 +10,15 @@ const AlertRule = {
     condition: '`condition`',// 条件，例如大于、小于等（MySQL 保留字，必须加反引号）
     threshold: 'threshold',// 阈值
     durationSeconds: 'duration_seconds',// 持续时间，单位秒，满足条件持续多长时间才触发告警
+    severity: 'severity', // 告警级别: info, warn, error, critical
     enabled: 'enabled', // 是否启用
+    webhookUrl: 'webhook_url', // Webhook 通知 URL
     createdAt: 'created_at' // 创建时间
   },
 
-  insertableFields: ['tenantId', 'deviceId', 'name', 'metric', 'condition', 'threshold', 'durationSeconds', 'enabled'],
+  insertableFields: ['tenantId', 'deviceId', 'name', 'metric', 'condition', 'threshold', 'durationSeconds', 'severity', 'enabled', 'webhookUrl'],
 
-  updatableFields: ['name', 'metric', 'condition', 'threshold', 'durationSeconds', 'enabled']
+  updatableFields: ['name', 'metric', 'condition', 'threshold', 'durationSeconds', 'severity', 'enabled', 'webhookUrl']
 };
 
 export default AlertRule;

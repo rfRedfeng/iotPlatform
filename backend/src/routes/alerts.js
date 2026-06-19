@@ -56,7 +56,7 @@ router.get('/rules/:id', async (req, res, next) => {
  */
 router.post('/rules', async (req, res, next) => {
   try {
-    const { name, deviceId, metric, condition, threshold, durationSeconds, enabled } = req.body;
+    const { name, deviceId, metric, condition, threshold, durationSeconds, severity, enabled, webhookUrl } = req.body;
     if (!name || !metric || !condition || threshold === undefined) {
       return res.status(400).json({
         success: false,
@@ -64,11 +64,32 @@ router.post('/rules', async (req, res, next) => {
       });
     }
 
+    // 验证 severity 值
+    const validSeverities = ['info', 'warn', 'error', 'critical'];
+    if (severity && !validSeverities.includes(severity)) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 400, message: 'severity 必须是 info, warn, error, critical 之一' }
+      });
+    }
+
+    // 验证 webhookUrl 格式（如果提供）
+    if (webhookUrl && typeof webhookUrl === 'string') {
+      try {
+        new URL(webhookUrl);
+      } catch {
+        return res.status(400).json({
+          success: false,
+          error: { code: 400, message: 'webhookUrl 格式无效' }
+        });
+      }
+    }
+
     const taskId = crypto.randomUUID();
     const task = {
       id: taskId,
       type: 'alert.rule.create',
-      payload: { name, deviceId, metric, condition, threshold, durationSeconds, enabled },
+      payload: { name, deviceId, metric, condition, threshold, durationSeconds, severity, enabled, webhookUrl },
       tenantId: req.tenantId,
       userId: req.user.userId,
       timestamp: new Date().toISOString()
@@ -85,11 +106,33 @@ router.post('/rules', async (req, res, next) => {
  * PUT /api/alerts/rules/:id
  * C-5: 路由层白名单过滤
  */
-const ALERT_RULE_UPDATABLE_WHITELIST = ['name', 'metric', 'condition', 'threshold', 'durationSeconds', 'enabled', 'deviceId'];
+const ALERT_RULE_UPDATABLE_WHITELIST = ['name', 'metric', 'condition', 'threshold', 'durationSeconds', 'severity', 'enabled', 'deviceId', 'webhookUrl'];
 
 router.put('/rules/:id', async (req, res, next) => {
   try {
     const ruleId = parseInt(req.params.id);
+
+    // 验证 severity 值
+    const validSeverities = ['info', 'warn', 'error', 'critical'];
+    if (req.body.severity && !validSeverities.includes(req.body.severity)) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 400, message: 'severity 必须是 info, warn, error, critical 之一' }
+      });
+    }
+
+    // 验证 webhookUrl 格式（如果提供）
+    if (req.body.webhookUrl && typeof req.body.webhookUrl === 'string') {
+      try {
+        new URL(req.body.webhookUrl);
+      } catch {
+        return res.status(400).json({
+          success: false,
+          error: { code: 400, message: 'webhookUrl 格式无效' }
+        });
+      }
+    }
+
     const safeUpdates = {};
     for (const key of ALERT_RULE_UPDATABLE_WHITELIST) {
       if (key in req.body) safeUpdates[key] = req.body[key];

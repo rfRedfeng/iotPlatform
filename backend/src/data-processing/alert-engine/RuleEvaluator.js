@@ -13,7 +13,6 @@ class RuleEvaluator {
   }
 
   checkCondition(condition, threshold, data) {
-    // S-10: 强制 Number(data) 防止字符串/数字混比导致误判
     const value = Number(data);
     if (Number.isNaN(value)) return false;
     switch (condition) {
@@ -48,8 +47,8 @@ class RuleEvaluator {
     });
     // 记录日志
     AlertLogger.logAlertTrigger(alertEvent, rule, metrics);
-    // 通知前端
-    await Notifier.notify(tenantId, { ...alertEvent, ruleName: rule.name, metric: rule.metric });
+    // 通知前端和外部系统
+    await Notifier.notify(tenantId, { ...alertEvent, ruleName: rule.name, metric: rule.metric }, rule);
   }
 
   /**

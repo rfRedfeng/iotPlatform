@@ -40,7 +40,6 @@ export async function listEvents(tenantId, { page = 1, pageSize = 20 } = {}) {
 }
 
 export async function getEventById(eventId, tenantId) {
-  // I-8: 真正用 tenantId 校验,与 getRuleById 保持一致
   const event = await AlertEventRepository.findById(eventId);
   if (!event || event.tenantId !== tenantId) return null;
   return event;
@@ -53,7 +52,13 @@ async function _invalidateRuleCache(ruleId) {
 }
 
 export async function createRule(payload, task) {
-  const { name, deviceId, metric, condition, threshold, durationSeconds = 0, enabled = true, tenantId } = payload;
+  const { name, deviceId, metric, condition, threshold, durationSeconds = 0, severity = 'info', enabled = true, webhookUrl = null, tenantId } = payload;
+
+  // 验证 severity 值
+  const validSeverities = ['info', 'warn', 'error', 'critical'];
+  if (!validSeverities.includes(severity)) {
+    severity = 'info';
+  }
 
   const ruleId = await AlertRuleRepository.create({
     tenantId: tenantId || task.tenantId,
@@ -63,10 +68,12 @@ export async function createRule(payload, task) {
     condition,
     threshold,
     durationSeconds,
-    enabled
+    severity,
+    enabled,
+    webhookUrl
   });
 
-  return { id: ruleId, name, metric, condition, threshold };
+  return { id: ruleId, name, metric, condition, threshold, severity, webhookUrl };
 }
 
 export async function updateRule(payload, task) {
