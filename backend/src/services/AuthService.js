@@ -46,6 +46,7 @@ export async function login(username, password) {
     token: refreshToken,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
   });
+  console.log(`[AuthService] 用户 ${username} 登录成功，签发 accessToken 和 refreshToken`);
 
   return {
     accessToken,
@@ -92,20 +93,18 @@ export async function registerUser(payload, task) {
  * @returns {object|null} payload {userId, username, role, tenantId} 或 null
  */
 export async function verifyRefreshToken(refreshToken) {
-    if (!refreshToken) return null;
-    const payload = verifyToken(refreshToken);
-    if (!payload) return null;
-    // ★ C-1 修复:必须校验 DB 中的 expiresAt,而不仅仅看 JWT 自身 exp
-    // 原因:用户登出后如果 JWT 仍在 7 天有效期内,DB 行被删则本检查为 false
-    const stored = await RefreshTokenRepository.findByToken(refreshToken);
-    if (!stored) return null;
-    if (!_isRefreshTokenLive(stored)) return null;
-    return {
-        userId: payload.userId,
-        username: payload.username,
-        role: payload.role,
-        tenantId: payload.tenantId,
-    };
+  if (!refreshToken) return null;
+  const payload = verifyToken(refreshToken);
+  if (!payload) return null;
+  const stored = await RefreshTokenRepository.findByToken(refreshToken);
+  if (!stored) return null;
+  if (!_isRefreshTokenLive(stored)) return null;
+  return {
+    userId: payload.userId,
+    username: payload.username,
+    role: payload.role,
+    tenantId: payload.tenantId,
+  };
 }
 
 /**
@@ -114,11 +113,11 @@ export async function verifyRefreshToken(refreshToken) {
  * @returns {boolean}
  */
 function _isRefreshTokenLive(stored) {
-    if (!stored || !stored.expiresAt) return false;
-    const exp = stored.expiresAt instanceof Date
-        ? stored.expiresAt.getTime()
-        : new Date(stored.expiresAt).getTime();
-    return Number.isFinite(exp) && exp > Date.now();
+  if (!stored || !stored.expiresAt) return false;
+  const exp = stored.expiresAt instanceof Date
+    ? stored.expiresAt.getTime()
+    : new Date(stored.expiresAt).getTime();
+  return Number.isFinite(exp) && exp > Date.now();
 }
 
 /**
@@ -132,13 +131,11 @@ export async function refreshAccessToken(refreshToken) {
     throw new Error('Invalid or expired refresh token');
   }
 
-  // 检查数据库中是否存在 + 未过期 (C-1)
   const stored = await RefreshTokenRepository.findByToken(refreshToken);
   if (!stored) {
     throw new Error('Refresh token not found');
   }
   if (!_isRefreshTokenLive(stored)) {
-    // 顺手清掉过期行,避免残留
     await RefreshTokenRepository.deleteByToken(refreshToken);
     throw new Error('Refresh token expired');
   }
@@ -189,8 +186,6 @@ export async function refreshAccessToken(refreshToken) {
 // ========== Worker 任务处理器（自动注册）==========
 
 registerHandler('auth.register', registerUser);
-
-// ========== 登出 (C-1) ==========
 
 /**
  * 退出登录：删除该用户的所有 refreshToken，让所有设备重新登录

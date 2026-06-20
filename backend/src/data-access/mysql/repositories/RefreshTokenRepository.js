@@ -42,10 +42,6 @@ class RefreshTokenRepository {
     return result.affectedRows;
   }
 
-  /**
-   * 删除某用户的所有 refreshToken (C-1 logout 用)
-   * 让所有设备的登录态都失效,真正的"登出"
-   */
   async deleteAllForUser(userId) {
     if (!userId) return 0;
     const pool = dataSource.getMysqlPool();

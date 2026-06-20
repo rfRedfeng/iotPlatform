@@ -14,20 +14,19 @@ import CacheManager from '../data-access/redis/CacheManager.js';
 /**
  * 获取仪表盘摘要
  * @param {number} tenantId
- * @param {number|null} areaId 区域过滤(null = 全部区域)
+ * @param {number|null} areaId 
  * @returns {Promise<{totalDevices, onlineDevices, offlineDevices, todayAlerts, unacknowledgedAlerts, areaId, lastUpdated}>}
  */
 export async function getSummary(tenantId, areaId = null) {
   // 设备统计（按区域过滤）
   let allDevices;
   if (areaId) {
-      allDevices = await DeviceRepository.findByAreaId(tenantId, areaId, { page: 1, pageSize: 10000 });
+    allDevices = await DeviceRepository.findByAreaId(tenantId, areaId, { page: 1, pageSize: 10000 });
   } else {
-      allDevices = await DeviceRepository.findByTenantId(tenantId, { page: 1, pageSize: 10000 });
+    allDevices = await DeviceRepository.findByTenantId(tenantId, { page: 1, pageSize: 10000 });
   }
   const totalDevices = allDevices?.length || 0;
 
-  // I-3: 用 MGET 批量拿设备状态,避免 N 次 Redis 往返
   const statusKeys = (allDevices || []).map(d => `device:status:${d.id}`);
   const statuses = statusKeys.length > 0 ? await CacheManager.mget(statusKeys) : [];
   let onlineDevices = 0;
@@ -61,7 +60,6 @@ export async function getSummary(tenantId, areaId = null) {
 
 /**
  * 获取设备指标趋势数据
- * I-5: 用 TDengine INTERVAL 时间分桶 + JS 侧 metric 解析与平均
  */
 export async function getTrends(deviceId, tenantId, metric, startTime, endTime, interval = '1h') {
   // 校验设备归属
@@ -83,8 +81,6 @@ export async function getTrends(deviceId, tenantId, metric, startTime, endTime, 
     timestamp: typeof row.ts === 'string' ? row.ts : new Date(row.ts).toISOString(),
     value: row.value,
   }));
-
-  return { deviceId, metric, interval, dataPoints };
 
   return { deviceId, metric, interval, dataPoints };
 }

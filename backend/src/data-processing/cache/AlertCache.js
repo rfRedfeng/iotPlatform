@@ -1,8 +1,6 @@
 import CacheManager from '../../data-access/redis/CacheManager.js';
 
 class AlertCache {
-  // I-9: 删除未被任何代码使用的 setAlertEvent / getAlertEvent
-  // 原因: key 用 deviceId,value 存单数 ruleId,多次写会互相覆盖,且无 reader
 
   // 缓存告警规则
   async setRules(deviceId, rules) {

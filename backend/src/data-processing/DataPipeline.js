@@ -19,7 +19,7 @@ import RuleEvaluator from './alert-engine/RuleEvaluator.js';
 // 实时推送
 import RealtimePusher from './RealtimePusher.js';
 
-// SQL 注入防御 (C-2/C-3)
+// SQL 注入防御 
 import {
   assertIntegerId,
   assertSafeIdentifier,
@@ -39,7 +39,6 @@ class DataPipeline {
   async processData(deviceId, tenantId, areaId,
     devicekey, deviceSecret,
     deviceType, rawData) {
-    // C-3: 入口先做白名单校验,防止协议层的脏数据进入下游 SQL 拼接
     const _deviceId = assertIntegerId(deviceId, 'deviceId');
     const _tenantId = assertIntegerId(tenantId, 'tenantId');
     const _areaId = areaId == null ? null : assertIntegerId(areaId, 'areaId');
@@ -73,7 +72,7 @@ class DataPipeline {
     // S-4: 不再预先 JSON.stringify,让 DataIngestor / TimeSeriesRepo 一次性处理
     await DataIngestor.ingest(_deviceId, _tenantId, _areaId, _deviceType, metrics);
 
-    // 5. 评估告警规则（传入已查询的 rules，避免重复 DB 查询）
+    // 5. 评估告警规则
     const alertRules = await AlertRuleRep.findByTenantIdAndDeviceId(tenantId, deviceId);
     if (alertRules && alertRules.length > 0) {
       const alertEvents = await RuleEvaluator.evaluate(tenantId, deviceId, metrics, alertRules);
@@ -82,8 +81,6 @@ class DataPipeline {
         if (triggered) {
           await AlertCache.setAlertEvent(deviceId, ruleId);
           alertnum++;
-          // ★ 不在这里 pushAlert —— RuleEvaluator.triggerAlert() 已通过 Notifier 推送
-          // 此处只负责 Redis 计数,避免重复推送
         }
       }
       if (alertnum > 0) {

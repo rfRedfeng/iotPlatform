@@ -57,7 +57,7 @@ router.get('/:id', async (req, res, next) => {
  */
 router.get('/:id/data', async (req, res, next) => {
   try {
-    const { page = 1, pageSize = 10 } = req.query;
+    const { page = 1, pageSize = 100 } = req.query;
     const data = await getDeviceData(parseInt(req.params.id), req.tenantId, {
       page: parseInt(page),
       pageSize: parseInt(pageSize)
@@ -75,11 +75,6 @@ router.get('/:id/data', async (req, res, next) => {
  * GET /api/devices/:id/history
  * 设备历史数据（同步）
  *
- * 安全防护 (C-2 + I-4 + I-11):
- * - startTime/endTime 必须合法 ISO 8601
- * - endTime <= now() 且 endTime > startTime
- * - 时间跨度 <= 30 天 (防拉全表)
- * - 上述校验在路由层先做一次,service/Repo 层会再做一次 (纵深防御)
  */
 router.get('/:id/history', async (req, res, next) => {
   try {
@@ -87,6 +82,7 @@ router.get('/:id/history', async (req, res, next) => {
     if (!startTime || !endTime) {
       return res.status(400).json({ success: false, error: { code: 400, message: 'startTime and endTime are required' } });
     }
+    console.log("用户:", req.user.username, "请求设备历史数据，设备ID:", req.params.id, "startTime:", startTime, "endTime:", endTime);
     // 白名单校验 - 必须在传进 service 之前拒掉
     assertIntegerId(req.params.id, 'id');
     const _start = assertIsoTimestamp(startTime, 'startTime');
@@ -156,8 +152,6 @@ router.post('/', async (req, res, next) => {
  * PUT /api/devices/:id
  * 更新设备（异步队列 → 202）
  *
- * C-5: 路由层白名单过滤 — 防止客户端修改 tenantId / deviceKey / deviceSecret / lastSeen
- * 即使 Device.updatableFields 没列入这些字段,显式拒绝更安全
  */
 const DEVICE_UPDATABLE_WHITELIST = ['name', 'areaId', 'protocol', 'deviceType', 'status', 'metadata'];
 

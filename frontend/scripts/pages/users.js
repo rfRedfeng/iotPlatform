@@ -422,7 +422,7 @@ export function render(root) {
             title: '新建用户',
             content: (body, close) => {
                 const tenantOpts = isAdmin
-                    ? tenants.map(t => h('option', { value: String(t.id) }, t.name))
+                    ? (getState().tenants || []).map(t => h('option', { value: String(t.id) }, t.name))
                     : [];
                 const form = h('form', { style: { display: 'flex', flexDirection: 'column', gap: '0.75rem' } }, [
                     h('label', {}, [

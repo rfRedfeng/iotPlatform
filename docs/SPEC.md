@@ -430,99 +430,51 @@ export const apiClient = new ApiClient(CONFIG.API_BASE_URL);
 
 ```
 node_iot/
-├── backend/                          # 后端项目 (独立仓库/目录)
+├── backend/                       # 后端框架 
 │   ├── src/
-│   │   ├── data-access/              # 数据访问层
-│   │   │   ├── mysql/
-│   │   │   │   ├── models/           # User, Device, Area, Tenant, AlertRule
-│   │   │   │   └── repositories/    # UserRepository, DeviceRepository, ...
-│   │   │   ├── redis/
-│   │   │   │   ├── CacheManager.js
-│   │   │   │   └── SessionStore.js
-│   │   │   ├── tdengine/
-│   │   │   │   └── TimeSeriesRepo.js
-│   │   │   └── DataSourceManager.js
+│   │   ├── config/                   # 数据库配置文件
+│   │   ├── data-access/                 # 数据访问层
+│   │   │   ├── mysql/                   # mysql 对象数据库
+│   │   │   │   ├── models/           
+│   │   │   │   └── repositories/    
+│   │   │   ├── redis/                   # redis 缓存数据库
+│   │   │   └── tdengine/                # tdengine 时序数据库
+│   │   │
 │   │   ├── data-processing/          # 数据处理层
-│   │   │   ├── protocol-adapters/    # MqttAdapter, TcpAdapter, UdpAdapter, CoapAdapter
-│   │   │   ├── parsers/              # JsonParser, BinaryParser
-│   │   │   ├── cache/                # DeviceCache, MetricCache
-│   │   │   ├── alert-engine/         # RuleEvaluator, Notifier
-│   │   │   ├── time-series/          # DataIngestor, Aggregator
-│   │   │   └── DataPipeline.js
-│   │   ├── services/                 # 业务服务层
-│   │   │   ├── UserService.js
-│   │   │   ├── DeviceService.js
-│   │   │   ├── AreaService.js
-│   │   │   ├── AlertService.js
-│   │   │   ├── DashboardService.js
-│   │   │   ├── AuthService.js
-│   │   │   └── TenantService.js
-│   │   ├── routes/                   # 路由层
-│   │   │   ├── auth.js
-│   │   │   ├── users.js
-│   │   │   ├── devices.js
-│   │   │   ├── areas.js
-│   │   │   ├── alerts.js
-│   │   │   └── dashboard.js
-│   │   ├── middleware/                # 中间件
-│   │   │   ├── auth.js               # JWT验证
-│   │   │   ├── tenant.js             # 租户隔离
-│   │   │   ├── rateLimit.js          # 限流
-│   │   │   └── errorHandler.js       # 错误处理
-│   │   ├── models/                   # 数据模型
-│   │   ├── config/                   # 配置文件
-│   │   │   ├── database.js          ✅ MySQL/Redis/TDengine配置
-│   │   │   └── jwt.js               ✅ JWT密钥配置（签发/验证）
-│   │   └── app.js                   # 应用入口
-│   ├── package.json
-│   └── .env                          # 环境变量 (PORT=3000, DB_HOST, REDIS_HOST, etc)
+│   │   │   └── protocol-adapters/       # 设备接入协议(TCP,MQTT...)
+│   │   │   ├── parsers/                 # 协议解析(JSON)
+│   │   │   ├── cache/                   # 设备实时数据缓存
+│   │   │   ├── alert-engine/            # 告警规则识别
+│   │   │   ├── time-series/             # 时序数据存入
+│   │   │   └── DataPipeline.js       # 数据处理管道
+│   │   │
+│   │   ├── services/                 # 业务服务层(负责前端业务处理)
+│   │   ├── routes/                   # 路由层(负责提供前端业务处理接口)
+│   │   ├── middleware/               # 中间件(缓存，密码校验等数据处理)
+│   │   │
+│   │   └── app.js                    # 应用入口
+│   ├── test/                     # 测试构件
+│   └── .env                      # 环境变量     
+│   
 │
-├── frontend/                         # 前端项目 (独立仓库/目录)
+├── frontend/                     # 后端框架 
 │   ├── index.html                   # 主入口 (由后端 Express 托管)
 │   ├── styles/
-│   │   ├── main.css
-│   │   ├── components.css
-│   │   └── pages.css
+│   │   └── main.css                 # 样式表
+│   │
 │   ├── scripts/
 │   │   ├── app.js                   # 应用入口
 │   │   ├── api/                     # API 调用层
-│   │   │   ├── client.js            # Fetch 封装，含 JWT 自动附加
-│   │   │   ├── auth.js
-│   │   │   ├── devices.js
-│   │   │   ├── users.js
-│   │   │   ├── areas.js
-│   │   │   ├── alerts.js
-│   │   │   └── dashboard.js
 │   │   ├── services/                # 业务逻辑层
-│   │   │   ├── AuthService.js       # 登录/登出/Token刷新
-│   │   │   ├── DeviceService.js
-│   │   │   └── AlertService.js
-│   │   ├── components/              # UI 组件
-│   │   │   ├── Header.js
-│   │   │   ├── Sidebar.js
-│   │   │   ├── DeviceCard.js
-│   │   │   ├── DataChart.js         # 基于Chart.js
-│   │   │   ├── AlertItem.js
-│   │   │   └── Modal.js
-│   │   ├── pages/                   # 页面模块
-│   │   │   ├── Login.js
-│   │   │   ├── Dashboard.js
-│   │   │   ├── DeviceList.js
-│   │   │   ├── DeviceDetail.js
-│   │   │   ├── UserManagement.js
-│   │   │   ├── AreaManagement.js
-│   │   │   └── AlertManagement.js
-│   │   └── utils/                   # 工具函数
-│   │       ├── storage.js           # localStorage 封装
-│   │       ├── date.js
-│   │       └── chart.js
+│   │   │
+│   │   ├── components/              # UI 公有组件
+│   │   │
+│   │   └── pages/                   # 页面模块
+│   │   
 │   ├── assets/
 │   │   └── images/
 │   └── package.json
 │
-├── docs/                            # 文档
-│   └── SPEC.md
-├── docker-compose.yml               # 容器编排
 └── README.md
 ```
 

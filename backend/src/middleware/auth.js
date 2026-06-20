@@ -9,6 +9,7 @@ import { verifyToken } from '../config/jwt.js';
 export function authMiddleware(req, res, next) {
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) {
+    console.warn("认证失败，缺少或无效的授权头，header:", header);
     return res.status(401).json({
       success: false,
       error: { code: 401, message: 'Missing or invalid authorization header' }
@@ -19,11 +20,13 @@ export function authMiddleware(req, res, next) {
   const payload = verifyToken(token);
 
   if (!payload) {
+    console.warn("认证失败，token 无效或过期");
     return res.status(401).json({
       success: false,
       error: { code: 401, message: 'Invalid or expired token' }
     });
   }
+  console.log("认证成功，用户:", payload?.username, "租户ID:", payload?.tenantId);
 
   // payload: { userId, username, role, tenantId }
   req.user = payload;

@@ -28,6 +28,7 @@ router.post('/login', async (req, res, next) => {
         error: { code: 400, message: 'username and password are required' }
       });
     }
+    console.log("[auth]用户:", username, "尝试登录");
 
     const result = await login(username, password);
     res.json({ success: true, data: result });
@@ -35,15 +36,14 @@ router.post('/login', async (req, res, next) => {
     if (err.message === '用户名或密码错误') {
       return res.status(401).json({ success: false, error: { code: 401, message: err.message } });
     }
+    console.error("[auth]用户:", username, "登录失败:", err.message);
     next(err);
   }
 });
 
 /**
  * POST /api/auth/register
- * 同步注册：直接在路由层 bcrypt.hash 后落库（C-4）
- * 不再入 Redis 队列 — 明文密码不能进 Redis/AOF/任务结果
- * 限流 + 鉴权：当前由调用方（manager/admin）的 accessToken 保护
+ * 同步注册：直接在路由层 bcrypt.hash 
  */
 router.post('/register', authMiddleware, async (req, res, next) => {
   try {
@@ -61,7 +61,13 @@ router.post('/register', authMiddleware, async (req, res, next) => {
       });
     }
     // 缺省归到默认租户（1），避免 tenant_id=0 触发外键失败
-    const tenantId = req.user?.tenantId ?? 1;
+    if (!req.user?.tenantId) {
+      console.error("[auth]用户:", username, "注册时未提供租户信息，直接返回错误");
+      return res.status(400).json({
+        success: false,
+        error: { code: 400, message: 'tenantId is required' }
+      });
+    }
     const created = await registerUser(
       { username, password, role, email, tenantId },
       { tenantId, userId: req.user?.userId }
@@ -92,11 +98,12 @@ router.post('/refresh', async (req, res, next) => {
         error: { code: 400, message: 'refreshToken is required' }
       });
     }
+    console.log("[auth]尝试刷新 Token，refreshToken:", refreshToken);
 
     const result = await refreshAccessToken(refreshToken);
     res.json({ success: true, data: result });
   } catch (err) {
-    // C-1: 过期/无效/不存在 都映射到 401
+    console.error("[auth]刷新 Token 失败，refreshToken:", refreshToken, "错误:", err.message);
     if (err.message.includes('Invalid') || err.message.includes('not found') || err.message.includes('expired')) {
       return res.status(401).json({ success: false, error: { code: 401, message: err.message } });
     }

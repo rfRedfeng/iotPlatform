@@ -69,7 +69,7 @@ export function rateLimitMiddleware(req, res, next) {
         }
       });
     }
-
+    console.log(`用户: ${req.user?.username || req.ip}，请求路径: ${req.path}，剩余请求数: ${remaining}, 重置时间: ${new Date(resetAt * 1000).toISOString()}`);
     next();
   }).catch(err => {
     console.error('[RateLimit] Error:', err.message);

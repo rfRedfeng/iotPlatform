@@ -21,7 +21,7 @@ const router = express.Router();
 
 /** admin 角色判断 */
 function isAdmin(user) {
-    return user?.role === 'admin';
+  return user?.role === 'admin';
 }
 
 /**
@@ -37,8 +37,10 @@ router.get('/', async (req, res, next) => {
       ? await listAll(opts)
       : await list(req.tenantId, opts);
 
+    console.log("用户:", req.user.username, "请求用户列表，返回数量:", Array.isArray(result) ? result.length : (result?.list?.length || 0));
     // 非管理员: 进一步过滤掉 admin/manager,只留 role='user'
     if (!isAdmin(req.user)) {
+      console.log("用户:", req.user.username, "非管理员访问用户列表，过滤掉 admin/manager 角色");
       const arr = Array.isArray(result) ? result : (result?.list || []);
       const filtered = arr.filter(u => u.role === 'user');
       result = Array.isArray(result) ? filtered : { ...result, list: filtered };
@@ -58,6 +60,7 @@ router.get('/:id', async (req, res, next) => {
     if (!user) {
       return res.status(404).json({ success: false, error: { code: 404, message: 'User not found' } });
     }
+    console.log("[users]用户:", req.user.username, "请求用户详情，用户ID:", req.params.id);
     res.json({ success: true, data: user });
   } catch (err) {
     next(err);
@@ -78,10 +81,10 @@ router.post('/', async (req, res, next) => {
   try {
     const { username, password, role, email, tenantId } = req.body;
     if (!username || !password) {
-      return res.status(400).json({ success: false, error: { code: 400, message: 'username and password are required' } });
+      return res.status(400).json({ success: false, error: { code: 400, message: '用户名和密码是必填项' } });
     }
     if (password.length < 6) {
-      return res.status(400).json({ success: false, error: { code: 400, message: 'password must be at least 6 characters' } });
+      return res.status(400).json({ success: false, error: { code: 400, message: '密码必须在6个字符以上' } });
     }
     // 管理员必须指定租户(admin 自身的 tenantId=0 不能作为默认值)
     if (!tenantId && tenantId !== 0) {
@@ -96,6 +99,7 @@ router.post('/', async (req, res, next) => {
       email,
       tenantId,
     });
+    console.log("[users]用户:", req.user.username, "创建新用户，用户ID:", created.id);
     res.json({ success: true, data: created });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY' || err.errno === 1062) {
@@ -124,8 +128,8 @@ router.put('/:id', async (req, res, next) => {
   const admin = role === 'admin';
   const manager = role === 'manager';
 
+  console.log("[users]用户:", req.user.username, "尝试更新用户，目标用户ID:", targetId, "请求体:", req.body);
   if (admin) {
-    // C-5: 限制 admin 只能改这 5 个字段,不允许改 passwordHash / createdAt 等
     const filtered = {};
     for (const key of ADMIN_ALLOWED) {
       if (key in req.body) filtered[key] = req.body[key];
@@ -137,7 +141,6 @@ router.put('/:id', async (req, res, next) => {
     }
     req.body = filtered;
   } else if (isSelf) {
-    // 自己:username/email/password（不含 role/tenantId）
     const allowed = ['username', 'email', 'password'];
     const filtered = {};
     for (const key of allowed) {
@@ -150,7 +153,6 @@ router.put('/:id', async (req, res, next) => {
     }
     req.body = filtered;
   } else if (manager) {
-    // manager 改本租户其他用户：必须 target 是 role='user'，且不能改 role
     const { getById } = await import('../services/UserService.js');
     const target = await getById(targetId, req.tenantId);
     if (!target) {
@@ -163,7 +165,6 @@ router.put('/:id', async (req, res, next) => {
         success: false, error: { code: 403, message: '租户管理员只能编辑 role=user 的用户' }
       });
     }
-    // 过滤字段：username/email/password（不含 role、不含 tenantId）
     const allowed = ['password', 'username', 'email'];
     const filtered = {};
     for (const key of allowed) {
@@ -193,6 +194,7 @@ router.put('/:id', async (req, res, next) => {
       timestamp: new Date().toISOString()
     };
 
+    console.log("[users]用户:", req.user.username, "提交更新用户任务，目标用户ID:", targetId);
     await CacheManager.enqueue(TASK_QUEUE_KEY, JSON.stringify(task));
     res.status(202).json({ success: true, taskId });
   } catch (err) {
@@ -222,6 +224,7 @@ router.delete('/:id', async (req, res, next) => {
       timestamp: new Date().toISOString()
     };
 
+    console.log("[users]用户:", req.user.username, "提交删除用户任务，目标用户ID:", userId);
     await CacheManager.enqueue(TASK_QUEUE_KEY, JSON.stringify(task));
     res.status(202).json({ success: true, taskId });
   } catch (err) {

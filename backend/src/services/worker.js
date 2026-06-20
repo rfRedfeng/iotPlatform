@@ -14,16 +14,15 @@ const QUEUE_KEY = TASK_QUEUE_KEY;
 const RESULT_PREFIX = TASK_RESULT_PREFIX;
 const RESULT_TTL = 300; // 5min 结果过期时间
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5min 清理一次过期 refreshToken
-const BLPOP_TIMEOUT_SEC = 1; // I-2: BLPOP 阻塞 1s (兼顾延迟和清理周期)
+const BLPOP_TIMEOUT_SEC = 1; // BLPOP 阻塞 1s 
 
 // 进行任务处理的主循环
 let running = true;
-let activePromise = null; // 当前运行中的 Worker Promise（用于 stop 后再 start）
+let activePromise = null;
 
 export function stopWorker() {
   if (!running) return;
   running = false;
-  // 静默切换 running 标志，避免 jest 测试期间打印噪声
 }
 
 export function isWorkerRunning() {
@@ -31,7 +30,7 @@ export function isWorkerRunning() {
 }
 
 export async function startWorker() {
-  if (activePromise) return activePromise; // 已经在跑就不重复启动
+  if (activePromise) return activePromise;
 
   console.log('[Worker] 启动数据处理 Worker');
 
@@ -54,11 +53,8 @@ async function _runLoop() {
   let lastCleanup = Date.now();
   while (running) {
     try {
-      // I-2: 用 BLPOP 替代 LPOP + sleep,空队列时阻塞等待 1s
-      // (阻塞时 _runLoop 不会跑,定时清理的 lastCleanup 也不会被误判)
       const taskStr = await CacheManager.blockingDequeue(QUEUE_KEY, BLPOP_TIMEOUT_SEC);
       if (!taskStr) {
-        // C-1: 即使阻塞中也要周期性清理 (timeout=1s 时,每秒都会进到这里)
         const now = Date.now();
         if (now - lastCleanup > CLEANUP_INTERVAL_MS) {
           lastCleanup = now;
@@ -112,10 +108,8 @@ async function _runLoop() {
     }
   }
 
-  // 静默退出，避免 jest 把退出日志当成 "after tests are done" 警告
 }
 
-// 将处理结果写入 Redis，并通过 WebSocket 推送给前端
 async function _writeResult(taskId, tenantId, result) {
   if (!result || typeof result !== 'object') {
     result = { status: 'failed', error: { message: 'Handler returned invalid result' } };
